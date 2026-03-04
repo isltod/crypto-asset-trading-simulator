@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Futures Chart</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <header class="header">
+            <div class="logo">
+                <h1>Binance Futures</h1>
+                <span class="badge">Virtual Trading</span>
+            </div>
+            <div class="controls">
+                <div class="custom-select">
+                    <select id="symbol-select">
+                        <option value="BTCUSDT" selected>BTCUSDT</option>
+                    </select>
+                </div>
+
+                <div class="indicator-toggles">
+                    <div class="toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="toggle-ma" checked>
+                            <span class="slider"></span>
+                            <span class="label-text">MA</span>
+                        </label>
+                        <input type="number" id="ma-length" class="length-input" value="20" min="1" max="200"
+                            title="MA Length">
+                    </div>
+
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-bb">
+                        <span class="slider"></span>
+                        <span class="label-text">Bollinger Bands</span>
+                    </label>
+                </div>
+
+                <div class="price-display">
+                    <span id="current-price" class="price">Loading...</span>
+                    <!-- 실시간 상승/하락 폭 표기 등을 위한 요소 -->
+                    <span id="price-change" class="change"></span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div id="chart-container" class="chart-container"></div>
+        </main>
+    </div>
+
+    <!-- TradingView Lightweight Charts 라이브러리 추가 -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
