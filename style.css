@@ -71,6 +71,7 @@ body {
 
 .controls {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 1.5rem;
 }
@@ -121,8 +122,10 @@ body {
     gap: 0.5rem;
 }
 
-.length-input {
-    width: 45px;
+.length-input,
+.capital-input,
+.leverage-input,
+.roi-input {
     background: rgba(15, 23, 42, 0.6);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
@@ -135,19 +138,82 @@ body {
     transition: border-color 0.2s;
 }
 
-.length-input:focus {
+.length-input {
+    width: 45px;
+}
+
+.capital-input {
+    width: 70px;
+    font-weight: 600;
+}
+
+.leverage-input {
+    width: 50px;
+    font-weight: 600;
+}
+
+.roi-input {
+    width: 55px;
+    font-weight: 600;
+}
+
+.roi-input.up {
+    color: var(--up-color);
+}
+
+.roi-input.down {
+    color: var(--down-color);
+}
+
+.length-input:focus,
+.capital-input:focus,
+.leverage-input:focus,
+.roi-input:focus {
     border-color: var(--accent-color);
 }
 
 /* Hide spinners for number input */
 .length-input::-webkit-outer-spin-button,
-.length-input::-webkit-inner-spin-button {
+.length-input::-webkit-inner-spin-button,
+.capital-input::-webkit-outer-spin-button,
+.capital-input::-webkit-inner-spin-button,
+.leverage-input::-webkit-outer-spin-button,
+.leverage-input::-webkit-inner-spin-button,
+.roi-input::-webkit-outer-spin-button,
+.roi-input::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
 }
 
-.length-input[type=number] {
+.length-input[type=number],
+.capital-input[type=number],
+.leverage-input[type=number],
+.roi-input[type=number] {
     appearance: textfield;
+}
+
+.input-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(15, 23, 42, 0.4);
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.input-group {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.divider {
+    width: 1px;
+    height: 14px;
+    background-color: var(--border-color);
+    margin: 0 0.25rem;
 }
 
 .toggle-switch {

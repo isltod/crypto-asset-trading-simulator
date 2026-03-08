@@ -19,6 +19,14 @@ let bbMiddleSeries = null; // optional visibility
 let ws = null;
 let lastClose = 0;
 let maPeriod = 20;
+let virtualCapital = 100;
+let leverage = 1;
+
+// TPSL State
+let tpslEnabled = false;
+let tpRoi = 10;
+let slRoi = -5;
+
 const BB_PERIOD = 20;
 const BB_STD_DEV = 2;
 
@@ -60,6 +68,49 @@ async function init() {
         if (bbUpperSeries) bbUpperSeries.applyOptions({ visible: isVisible });
         if (bbLowerSeries) bbLowerSeries.applyOptions({ visible: isVisible });
         if (bbMiddleSeries) bbMiddleSeries.applyOptions({ visible: isVisible });
+    });
+
+    // Virtual Capital configuration
+    document.getElementById('capital-input').addEventListener('change', (e) => {
+        let val = parseFloat(e.target.value);
+        if (isNaN(val) || val < 0) val = 0;
+        e.target.value = val;
+        virtualCapital = val;
+        console.log("Virtual Capital set to:", virtualCapital);
+    });
+
+    // Leverage configuration
+    document.getElementById('leverage-input').addEventListener('change', (e) => {
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val) || val < 1) val = 1;
+        if (val > 100) val = 100;
+        e.target.value = val;
+        leverage = val;
+        console.log("Leverage set to:", leverage);
+    });
+
+    // TPSL Configuration
+    document.getElementById('toggle-tpsl').addEventListener('change', (e) => {
+        tpslEnabled = e.target.checked;
+        console.log("TPSL Enabled:", tpslEnabled);
+    });
+
+    document.getElementById('tp-input').addEventListener('change', (e) => {
+        let val = parseFloat(e.target.value);
+        if (isNaN(val)) val = 0;
+        else val = Math.abs(val);
+        e.target.value = val;
+        tpRoi = val;
+        console.log("Take Profit set to:", tpRoi, "%");
+    });
+
+    document.getElementById('sl-input').addEventListener('change', (e) => {
+        let val = parseFloat(e.target.value);
+        if (isNaN(val)) val = 0;
+        else val = -Math.abs(val);
+        e.target.value = val;
+        slRoi = val;
+        console.log("Stop Loss set to:", slRoi, "%");
     });
 
     // Handle Window Resize via ResizeObserver to make it rock solid
