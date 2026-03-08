@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Binance Futures Chart</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2">
 </head>
 
 <body>
@@ -21,6 +21,49 @@
                     <select id="symbol-select">
                         <option value="BTCUSDT" selected>BTCUSDT</option>
                     </select>
+                </div>
+
+                <div class="input-container">
+                    <div class="input-group">
+                        <span class="label-text">Capital:</span>
+                        <input type="number" id="capital-input" class="capital-input" value="100" min="0" step="10">
+                        <span class="badge">USDT</span>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <div class="input-group">
+                        <span class="label-text">Leverage:</span>
+                        <input type="number" id="leverage-input" class="leverage-input" value="1" min="1" max="100"
+                            step="1">
+                        <span class="badge">x</span>
+                    </div>
+                </div>
+
+                <div class="input-container">
+                    <div class="toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="toggle-tpsl">
+                            <span class="slider"></span>
+                            <span class="label-text">TPSL</span>
+                        </label>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <div class="input-group">
+                        <span class="label-text">TP:</span>
+                        <input type="number" id="tp-input" class="roi-input up" value="10" min="0" step="1">
+                        <span class="badge">%</span>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <div class="input-group">
+                        <span class="label-text">SL:</span>
+                        <input type="number" id="sl-input" class="roi-input down" value="-5" max="0" step="1">
+                        <span class="badge">%</span>
+                    </div>
                 </div>
 
                 <div class="indicator-toggles">
