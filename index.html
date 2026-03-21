@@ -94,12 +94,33 @@
 
         <main class="main-content">
             <div id="chart-container" class="chart-container"></div>
+
+            <!-- Trade Panel Overlay -->
+            <div id="trade-panel" class="trade-panel">
+                <div class="panel-header">Trade Execution</div>
+                <div class="order-buttons">
+                    <button id="btn-long" class="btn btn-long">Long</button>
+                    <button id="btn-short" class="btn btn-short">Short</button>
+                </div>
+                <!-- Active Position Info (Hidden until trade opens) -->
+                <div id="active-position-info" class="position-info hidden">
+                    <div class="pos-row"><span class="pos-label">Side:</span> <span id="pos-side"></span></div>
+                    <div class="pos-row"><span class="pos-label">Entry:</span> <span id="pos-entry"></span></div>
+                    <div class="pos-row"><span class="pos-label">Margin:</span> <span id="pos-margin"></span></div>
+                    <div class="pos-row"><span class="pos-label">Size:</span> <span id="pos-size"></span></div>
+                    <div class="pos-row"><span class="pos-label">Unrealized PnL:</span> <span id="pos-pnl"
+                            class="pnl-val"></span></div>
+                    <div class="pos-row"><span class="pos-label">ROE:</span> <span id="pos-roe" class="pnl-val"></span>
+                    </div>
+                    <button id="btn-close" class="btn btn-close">Close Position</button>
+                </div>
+            </div>
         </main>
     </div>
 
     <!-- TradingView Lightweight Charts 라이브러리 추가 -->
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=5"></script>
 </body>
 
 </html>

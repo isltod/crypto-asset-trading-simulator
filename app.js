@@ -7,6 +7,16 @@ const symbolSelect = document.getElementById('symbol-select');
 const chartContainer = document.getElementById('chart-container');
 const currentPriceEl = document.getElementById('current-price');
 const priceChangeEl = document.getElementById('price-change');
+const btnLong = document.getElementById('btn-long');
+const btnShort = document.getElementById('btn-short');
+const btnClose = document.getElementById('btn-close');
+const activePosInfo = document.getElementById('active-position-info');
+const posSideEl = document.getElementById('pos-side');
+const posEntryEl = document.getElementById('pos-entry');
+const posMarginEl = document.getElementById('pos-margin');
+const posSizeEl = document.getElementById('pos-size');
+const posPnlEl = document.getElementById('pos-pnl');
+const posRoeEl = document.getElementById('pos-roe');
 
 // State
 let currentSymbol = 'BTCUSDT';
@@ -22,6 +32,9 @@ let maPeriod = 20;
 let virtualCapital = 100;
 let leverage = 1;
 
+// Active Position State
+let activePosition = null;
+
 // TPSL State
 let tpslEnabled = false;
 let tpRoi = 10;
@@ -30,8 +43,67 @@ let slRoi = -5;
 const BB_PERIOD = 20;
 const BB_STD_DEV = 2;
 
+// Persistence
+function saveConfig() {
+    const config = {
+        currentSymbol,
+        maPeriod,
+        virtualCapital,
+        leverage,
+        tpslEnabled,
+        tpRoi,
+        slRoi,
+        activePosition,
+        showMA: document.getElementById('toggle-ma').checked,
+        showBB: document.getElementById('toggle-bb').checked
+    };
+    localStorage.setItem('catsConfig', JSON.stringify(config));
+}
+
+function loadConfig() {
+    const saved = localStorage.getItem('catsConfig');
+    if (!saved) return;
+    try {
+        const config = JSON.parse(saved);
+        if (config.currentSymbol) currentSymbol = config.currentSymbol;
+        if (config.maPeriod) maPeriod = config.maPeriod;
+        if (typeof config.virtualCapital === 'number') virtualCapital = config.virtualCapital;
+        if (typeof config.leverage === 'number') leverage = config.leverage;
+        if (typeof config.tpslEnabled === 'boolean') tpslEnabled = config.tpslEnabled;
+        if (typeof config.tpRoi === 'number') tpRoi = config.tpRoi;
+        if (typeof config.slRoi === 'number') slRoi = config.slRoi;
+        if (config.activePosition !== undefined) activePosition = config.activePosition;
+
+        // Update DOM Elements
+        document.getElementById('ma-length').value = maPeriod;
+        document.getElementById('capital-input').value = virtualCapital.toFixed(2);
+        document.getElementById('leverage-input').value = leverage;
+        document.getElementById('toggle-tpsl').checked = tpslEnabled;
+        document.getElementById('tp-input').value = tpRoi;
+        document.getElementById('sl-input').value = slRoi;
+
+        if (typeof config.showMA === 'boolean') document.getElementById('toggle-ma').checked = config.showMA;
+        if (typeof config.showBB === 'boolean') document.getElementById('toggle-bb').checked = config.showBB;
+
+        // Restore active position UI
+        if (activePosition) {
+            btnLong.disabled = true;
+            btnShort.disabled = true;
+            activePosInfo.classList.remove('hidden');
+            posSideEl.textContent = activePosition.side;
+            posSideEl.style.color = activePosition.side === 'LONG' ? 'var(--up-color)' : 'var(--down-color)';
+            posEntryEl.textContent = activePosition.entryPrice.toFixed(2);
+            posMarginEl.textContent = activePosition.margin.toFixed(2) + " USDT";
+            posSizeEl.textContent = activePosition.size.toFixed(4);
+        }
+    } catch (e) {
+        console.error("Failed to load config", e);
+    }
+}
+
 // Initialize function
 async function init() {
+    loadConfig();
     initChart();
     await loadSymbols();
     await loadChartData(currentSymbol);
@@ -39,6 +111,7 @@ async function init() {
     // Select change event listener
     symbolSelect.addEventListener('change', async (e) => {
         currentSymbol = e.target.value;
+        saveConfig();
         await loadChartData(currentSymbol);
     });
 
@@ -47,6 +120,7 @@ async function init() {
         if (maSeries) {
             maSeries.applyOptions({ visible: e.target.checked });
         }
+        saveConfig();
     });
 
     // MA Length configuration
@@ -56,6 +130,7 @@ async function init() {
         if (val > 200) val = 200;
         e.target.value = val;
         maPeriod = val;
+        saveConfig();
 
         // Recalculate and redraw series
         if (window.klineData && window.klineData.length > 0) {
@@ -68,6 +143,7 @@ async function init() {
         if (bbUpperSeries) bbUpperSeries.applyOptions({ visible: isVisible });
         if (bbLowerSeries) bbLowerSeries.applyOptions({ visible: isVisible });
         if (bbMiddleSeries) bbMiddleSeries.applyOptions({ visible: isVisible });
+        saveConfig();
     });
 
     // Virtual Capital configuration
@@ -76,6 +152,7 @@ async function init() {
         if (isNaN(val) || val < 0) val = 0;
         e.target.value = val;
         virtualCapital = val;
+        saveConfig();
         console.log("Virtual Capital set to:", virtualCapital);
     });
 
@@ -86,12 +163,14 @@ async function init() {
         if (val > 100) val = 100;
         e.target.value = val;
         leverage = val;
+        saveConfig();
         console.log("Leverage set to:", leverage);
     });
 
     // TPSL Configuration
     document.getElementById('toggle-tpsl').addEventListener('change', (e) => {
         tpslEnabled = e.target.checked;
+        saveConfig();
         console.log("TPSL Enabled:", tpslEnabled);
     });
 
@@ -101,6 +180,7 @@ async function init() {
         else val = Math.abs(val);
         e.target.value = val;
         tpRoi = val;
+        saveConfig();
         console.log("Take Profit set to:", tpRoi, "%");
     });
 
@@ -110,8 +190,14 @@ async function init() {
         else val = -Math.abs(val);
         e.target.value = val;
         slRoi = val;
+        saveConfig();
         console.log("Stop Loss set to:", slRoi, "%");
     });
+
+    // Trading Execution
+    btnLong.addEventListener('click', () => openPosition('LONG'));
+    btnShort.addEventListener('click', () => openPosition('SHORT'));
+    btnClose.addEventListener('click', () => closePosition());
 
     // Handle Window Resize via ResizeObserver to make it rock solid
     const resizeObserver = new ResizeObserver(entries => {
@@ -409,6 +495,12 @@ function connectWebSocket(symbol) {
 
             // Update UI with the current price
             updatePriceDisplay(tick.close, lastClose);
+
+            // Real-time Position / PnL / TPSL check
+            if (activePosition) {
+                updatePosition(tick.close);
+            }
+
             lastClose = tick.close;
         }
     };
@@ -442,6 +534,130 @@ function updatePriceDisplay(current, previous) {
     }
 
     currentPriceEl.textContent = formatStr;
+}
+
+// Trading Execution Logic
+function openPosition(side) {
+    if (activePosition) {
+        alert("A position is already open.");
+        return;
+    }
+    if (virtualCapital <= 0) {
+        alert("Insufficient capital. Change the Capital value at the top.");
+        return;
+    }
+    if (lastClose <= 0) return;
+
+    const margin = virtualCapital;
+    const entryPrice = lastClose;
+    const size = (margin * leverage) / entryPrice;
+
+    // 거래 수수료 차감 (진입 시): 0.05% * 레버리지 적용된 포지션 규모
+    const feeRate = 0.0005;
+    const entryFee = margin * leverage * feeRate;
+
+    virtualCapital -= entryFee;
+    document.getElementById('capital-input').value = virtualCapital.toFixed(2);
+
+    activePosition = {
+        side: side,
+        entryPrice: entryPrice,
+        margin: margin,
+        leverage: leverage,
+        size: size
+    };
+
+    // Update UI
+    btnLong.disabled = true;
+    btnShort.disabled = true;
+    activePosInfo.classList.remove('hidden');
+
+    posSideEl.textContent = side;
+    posSideEl.style.color = side === 'LONG' ? 'var(--up-color)' : 'var(--down-color)';
+    posEntryEl.textContent = entryPrice.toFixed(2);
+    posMarginEl.textContent = margin.toFixed(2) + " USDT";
+    posSizeEl.textContent = size.toFixed(4);
+
+    updatePosition(entryPrice);
+    saveConfig();
+    console.log(`[TRADE] Opened ${side} position: Entry ${entryPrice}, Margin ${margin}, Lev ${leverage}x`);
+}
+
+function closePosition() {
+    if (!activePosition) return;
+
+    const { pnl } = calculatePnL(lastClose);
+
+    // 거래 수수료 차감 (청산 시): 0.05% * 현재 가격 기준 포지션 규모
+    const feeRate = 0.0005;
+    const closingValue = lastClose * activePosition.size;
+    const closeFee = closingValue * feeRate;
+
+    // Update balance
+    virtualCapital += pnl;
+    virtualCapital -= closeFee;
+
+    if (virtualCapital < 0) virtualCapital = 0;
+
+    document.getElementById('capital-input').value = virtualCapital.toFixed(2);
+
+    console.log(`[TRADE] Closed position. PnL: ${pnl.toFixed(2)} USDT, Close Fee: ${closeFee.toFixed(2)} USDT. New Capital: ${virtualCapital.toFixed(2)}`);
+
+    // Reset state & UI
+    activePosition = null;
+    btnLong.disabled = false;
+    btnShort.disabled = false;
+    activePosInfo.classList.add('hidden');
+    saveConfig();
+}
+
+function calculatePnL(currentPrice) {
+    if (!activePosition) return { pnl: 0, roe: 0 };
+
+    let pnl = 0;
+    let priceMovePct = 0;
+
+    if (activePosition.side === 'LONG') {
+        pnl = (currentPrice - activePosition.entryPrice) * activePosition.size;
+        priceMovePct = ((currentPrice - activePosition.entryPrice) / activePosition.entryPrice) * 100;
+    } else {
+        pnl = (activePosition.entryPrice - currentPrice) * activePosition.size;
+        priceMovePct = ((activePosition.entryPrice - currentPrice) / activePosition.entryPrice) * 100;
+    }
+
+    // 수익률(ROE) = 자산 변동률 * 레버리지
+    const roe = priceMovePct * activePosition.leverage;
+    return { pnl, roe };
+}
+
+function updatePosition(currentPrice) {
+    if (!activePosition) return;
+
+    const { pnl, roe } = calculatePnL(currentPrice);
+
+    posPnlEl.textContent = `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} USDT`;
+    posPnlEl.className = `pnl-val ${pnl >= 0 ? 'up' : 'down'}`;
+
+    posRoeEl.textContent = `${roe >= 0 ? '+' : ''}${roe.toFixed(2)}%`;
+    posRoeEl.className = `pnl-val ${roe >= 0 ? 'up' : 'down'}`;
+
+    // Liquidation Check
+    if (roe <= -100) {
+        console.log("[LIQUIDATION] Position margin exhausted.");
+        closePosition();
+        return;
+    }
+
+    // TPSL triggers
+    if (tpslEnabled) {
+        if (roe >= tpRoi) {
+            console.log(`[TPSL] Take Profit triggered! ROE: ${roe.toFixed(2)}% >= ${tpRoi}%`);
+            closePosition();
+        } else if (roe <= slRoi) {
+            console.log(`[TPSL] Stop Loss triggered! ROE: ${roe.toFixed(2)}% <= ${slRoi}%`);
+            closePosition();
+        }
+    }
 }
 
 // Start the app when DOM is ready
