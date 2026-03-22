@@ -17,6 +17,15 @@ const posMarginEl = document.getElementById('pos-margin');
 const posSizeEl = document.getElementById('pos-size');
 const posPnlEl = document.getElementById('pos-pnl');
 const posRoeEl = document.getElementById('pos-roe');
+const btnHistory = document.getElementById('btn-history');
+const historyModal = document.getElementById('history-modal');
+const btnCloseHistory = document.getElementById('btn-close-history');
+const historyTbody = document.getElementById('history-tbody');
+const btnExportCsv = document.getElementById('btn-export-csv');
+const btnClearHistory = document.getElementById('btn-clear-history');
+const confirmModal = document.getElementById('confirm-modal');
+const btnConfirmCancel = document.getElementById('btn-confirm-cancel');
+const btnConfirmOk = document.getElementById('btn-confirm-ok');
 
 // State
 let currentSymbol = 'BTCUSDT';
@@ -34,6 +43,7 @@ let leverage = 1;
 
 // Active Position State
 let activePosition = null;
+let tradeHistory = [];
 
 // TPSL State
 let tpslEnabled = false;
@@ -54,6 +64,7 @@ function saveConfig() {
         tpRoi,
         slRoi,
         activePosition,
+        tradeHistory,
         showMA: document.getElementById('toggle-ma').checked,
         showBB: document.getElementById('toggle-bb').checked
     };
@@ -73,6 +84,7 @@ function loadConfig() {
         if (typeof config.tpRoi === 'number') tpRoi = config.tpRoi;
         if (typeof config.slRoi === 'number') slRoi = config.slRoi;
         if (config.activePosition !== undefined) activePosition = config.activePosition;
+        if (config.tradeHistory !== undefined) tradeHistory = config.tradeHistory;
 
         // Update DOM Elements
         document.getElementById('ma-length').value = maPeriod;
@@ -198,6 +210,107 @@ async function init() {
     btnLong.addEventListener('click', () => openPosition('LONG'));
     btnShort.addEventListener('click', () => openPosition('SHORT'));
     btnClose.addEventListener('click', () => closePosition());
+
+    // History Modal Controls
+    btnHistory.addEventListener('click', () => {
+        renderHistoryTable();
+        historyModal.classList.remove('hidden');
+    });
+
+    btnCloseHistory.addEventListener('click', () => {
+        historyModal.classList.add('hidden');
+    });
+
+    btnClearHistory.addEventListener('click', () => {
+        if (tradeHistory.length === 0) {
+            alert("기록된 거래 내역이 없습니다.");
+            return;
+        }
+        confirmModal.classList.remove('hidden');
+    });
+
+    btnConfirmCancel.addEventListener('click', () => {
+        confirmModal.classList.add('hidden');
+    });
+
+    btnConfirmOk.addEventListener('click', () => {
+        confirmModal.classList.add('hidden');
+        tradeHistory = [];
+        saveConfig();
+        renderHistoryTable();
+    });
+
+    btnExportCsv.addEventListener('click', async () => {
+        if (tradeHistory.length === 0) {
+            alert("No trade history to export.");
+            return;
+        }
+
+        const headers = ["Side", "Entry Time", "Exit Time", "Entry Price", "Exit Price", "PnL", "ROE", "Fee", "Capital Before", "Capital After"];
+        const rows = tradeHistory.map(row => {
+            const formatDate = (ts) => {
+                const d = new Date(ts);
+                const YYYY = d.getFullYear();
+                const MM = String(d.getMonth() + 1).padStart(2, '0');
+                const DD = String(d.getDate()).padStart(2, '0');
+                const HH = String(d.getHours()).padStart(2, '0');
+                const mm = String(d.getMinutes()).padStart(2, '0');
+                const ss = String(d.getSeconds()).padStart(2, '0');
+                return `${YYYY}-${MM}-${DD} ${HH}:${mm}:${ss}`;
+            };
+            return [
+                row.side,
+                formatDate(row.entryTime),
+                formatDate(row.exitTime),
+                row.entryPrice.toFixed(2),
+                row.exitPrice.toFixed(2),
+                row.pnl.toFixed(2),
+                `${row.roe.toFixed(2)}%`,
+                row.fee.toFixed(2),
+                row.capitalBefore.toFixed(2),
+                row.capitalAfter.toFixed(2)
+            ].join(',');
+        });
+
+        // Add BOM for correct UTF-8 in Excel
+        const BOM = new Uint8Array([0xEF, 0xBB, 0xBF]);
+        const csvString = [headers.join(','), ...rows].join(String.fromCharCode(10));
+        const blob = new Blob([BOM, csvString], { type: 'text/csv;charset=utf-8' });
+
+        const d = new Date();
+        const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+        const defaultFilename = `trade_history_${dateStr}.csv`;
+
+        if (window.showSaveFilePicker) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: defaultFilename,
+                    types: [{
+                        description: 'CSV File',
+                        accept: { 'text/csv': ['.csv'] }
+                    }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error('File save failed:', err);
+                }
+            }
+        } else {
+            // Fallback for older browsers
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", defaultFilename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+    });
 
     // Handle Window Resize via ResizeObserver to make it rock solid
     const resizeObserver = new ResizeObserver(entries => {
@@ -555,6 +668,7 @@ function openPosition(side) {
     // 거래 수수료 차감 (진입 시): 0.05% * 레버리지 적용된 포지션 규모
     const feeRate = 0.0005;
     const entryFee = margin * leverage * feeRate;
+    const capitalBefore = virtualCapital; // 기록용 (거래요금 차감 전 원금)
 
     virtualCapital -= entryFee;
     document.getElementById('capital-input').value = virtualCapital.toFixed(2);
@@ -564,7 +678,10 @@ function openPosition(side) {
         entryPrice: entryPrice,
         margin: margin,
         leverage: leverage,
-        size: size
+        size: size,
+        entryTime: Date.now(),
+        capitalBefore: capitalBefore,
+        entryFee: entryFee
     };
 
     // Update UI
@@ -586,18 +703,37 @@ function openPosition(side) {
 function closePosition() {
     if (!activePosition) return;
 
-    const { pnl } = calculatePnL(lastClose);
+    const { pnl, roe } = calculatePnL(lastClose);
 
     // 거래 수수료 차감 (청산 시): 0.05% * 현재 가격 기준 포지션 규모
     const feeRate = 0.0005;
     const closingValue = lastClose * activePosition.size;
     const closeFee = closingValue * feeRate;
 
+    const totalFee = activePosition.entryFee + closeFee;
+
     // Update balance
     virtualCapital += pnl;
     virtualCapital -= closeFee;
 
     if (virtualCapital < 0) virtualCapital = 0;
+
+    const exitTime = Date.now();
+    const historyRecord = {
+        side: activePosition.side,
+        entryTime: activePosition.entryTime,
+        exitTime: exitTime,
+        entryPrice: activePosition.entryPrice,
+        exitPrice: lastClose,
+        pnl: pnl,
+        roe: roe,
+        fee: totalFee,
+        capitalBefore: activePosition.capitalBefore,
+        capitalAfter: virtualCapital
+    };
+
+    tradeHistory.push(historyRecord);
+    renderHistoryTable();
 
     document.getElementById('capital-input').value = virtualCapital.toFixed(2);
 
@@ -657,6 +793,47 @@ function updatePosition(currentPrice) {
             console.log(`[TPSL] Stop Loss triggered! ROE: ${roe.toFixed(2)}% <= ${slRoi}%`);
             closePosition();
         }
+    }
+}
+
+function renderHistoryTable() {
+    historyTbody.innerHTML = '';
+    if (tradeHistory.length === 0) {
+        historyTbody.innerHTML = '<tr><td colspan="10" style="text-align: center;">No completed trades yet.</td></tr>';
+        return;
+    }
+
+    // Render latest trades first (reverse loop)
+    for (let i = tradeHistory.length - 1; i >= 0; i--) {
+        const row = tradeHistory[i];
+        const tr = document.createElement('tr');
+
+        const formatDate = (ts) => {
+            const d = new Date(ts);
+            const YYYY = d.getFullYear();
+            const MM = String(d.getMonth() + 1).padStart(2, '0');
+            const DD = String(d.getDate()).padStart(2, '0');
+            const HH = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            const ss = String(d.getSeconds()).padStart(2, '0');
+            return `${YYYY}-${MM}-${DD} ${HH}:${mm}:${ss}`;
+        };
+
+        const pnlClass = row.pnl >= 0 ? 'up' : 'down';
+
+        tr.innerHTML = `
+            <td class="${row.side}">${row.side}</td>
+            <td>${formatDate(row.entryTime)}</td>
+            <td>${formatDate(row.exitTime)}</td>
+            <td>${row.entryPrice.toFixed(2)}</td>
+            <td>${row.exitPrice.toFixed(2)}</td>
+            <td class="${pnlClass}">${row.pnl > 0 ? '+' : ''}${row.pnl.toFixed(2)}</td>
+            <td class="${pnlClass}">${row.roe > 0 ? '+' : ''}${row.roe.toFixed(2)}%</td>
+            <td>${row.fee.toFixed(2)}</td>
+            <td>${row.capitalBefore.toFixed(2)}</td>
+            <td>${row.capitalAfter.toFixed(2)}</td>
+        `;
+        historyTbody.appendChild(tr);
     }
 }
 
