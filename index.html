@@ -84,6 +84,10 @@
                     </label>
                 </div>
 
+                <div class="input-container">
+                    <button id="btn-history" class="btn btn-history">History</button>
+                </div>
+
                 <div class="price-display">
                     <span id="current-price" class="price">Loading...</span>
                     <!-- 실시간 상승/하락 폭 표기 등을 위한 요소 -->
@@ -118,9 +122,60 @@
         </main>
     </div>
 
+    <!-- History Modal Overlay -->
+    <div id="history-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Trade History</h2>
+                <div style="flex-grow: 1; margin-left: 20px;">
+                    <button id="btn-export-csv" class="btn btn-history">Export CSV</button>
+                    <button id="btn-clear-history" class="btn btn-history"
+                        style="margin-left: 10px; background: rgba(246, 70, 93, 0.15); border-color: rgba(246, 70, 93, 0.4); color: #ff6b81;">Clear
+                        History</button>
+                </div>
+                <button id="btn-close-history" class="btn-icon">&times;</button>
+            </div>
+            <div class="table-container">
+                <table id="history-table" class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Side</th>
+                            <th>Entry Time</th>
+                            <th>Exit Time</th>
+                            <th>Entry Price</th>
+                            <th>Exit Price</th>
+                            <th>PnL</th>
+                            <th>ROE</th>
+                            <th>Fee</th>
+                            <th>Cap. Before</th>
+                            <th>Cap. After</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-tbody">
+                        <!-- rows will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirm Modal -->
+    <div id="confirm-modal" class="modal-overlay hidden" style="z-index: 2000;">
+        <div class="modal-content" style="max-width: 400px; text-align: center; padding: 20px;">
+            <h3 style="margin-top: 0;">Clear Dashboard History</h3>
+            <p style="margin: 20px 0; color: var(--text-muted); line-height: 1.5;">정말로 모든 과거 거래 내역을 영구적으로
+                삭제하시겠습니까?<br>(이 작업은 되돌릴 수 없습니다)</p>
+            <div style="display: flex; justify-content: center; gap: 15px;">
+                <button id="btn-confirm-cancel" class="btn btn-history" style="min-width: 100px;">Cancel</button>
+                <button id="btn-confirm-ok" class="btn btn-history"
+                    style="min-width: 100px; background: rgba(246, 70, 93, 0.2); color: #ff6b81; border-color: rgba(246, 70, 93, 0.4);">Delete</button>
+            </div>
+        </div>
+    </div>
+
     <!-- TradingView Lightweight Charts 라이브러리 추가 -->
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <script src="app.js?v=5"></script>
+    <script src="app.js?v=12"></script>
 </body>
 
 </html>

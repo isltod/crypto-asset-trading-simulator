@@ -468,6 +468,122 @@ body {
     color: var(--text-muted);
 }
 
+/* History Modal Overlay */
+.btn-history {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.btn-history:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal-content {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    width: 90%;
+    max-width: 1000px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+    font-size: 1.25rem;
+    margin: 0;
+}
+
+.btn-icon {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.btn-icon:hover {
+    color: white;
+}
+
+.table-container {
+    padding: 1rem;
+    overflow-y: auto;
+}
+
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    text-align: right;
+}
+
+.history-table th {
+    text-align: right;
+    padding: 0.75rem 0.5rem;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    background: var(--panel-bg);
+    z-index: 10;
+}
+
+.history-table th:first-child,
+.history-table td:first-child {
+    text-align: center;
+}
+
+.history-table td {
+    padding: 0.75rem 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.history-table .LONG {
+    color: var(--up-color);
+    font-weight: 600;
+}
+
+.history-table .SHORT {
+    color: var(--down-color);
+    font-weight: 600;
+}
+
 @media (max-width: 768px) {
     .header {
         flex-direction: column;
