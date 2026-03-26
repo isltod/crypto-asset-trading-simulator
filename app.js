@@ -351,10 +351,39 @@ function initChart() {
         rightPriceScale: {
             borderColor: 'rgba(255, 255, 255, 0.1)',
         },
+        localization: {
+            timeFormatter: (time) => {
+                const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+                const d = new Date(time * 1000 + KST_OFFSET_MS);
+                const year = d.getUTCFullYear();
+                const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(d.getUTCDate()).padStart(2, '0');
+                const h = String(d.getUTCHours()).padStart(2, '0');
+                const m = String(d.getUTCMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day} ${h}:${m}`;
+            }
+        },
         timeScale: {
             borderColor: 'rgba(255, 255, 255, 0.1)',
             timeVisible: true,
             secondsVisible: false,
+            tickMarkFormatter: (time, tickMarkType, locale) => {
+                const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+                const d = new Date(time * 1000 + KST_OFFSET_MS);
+
+                if (tickMarkType === 0) return d.getUTCFullYear().toString();
+                if (tickMarkType === 1) return (d.getUTCMonth() + 1) + '월';
+                if (tickMarkType === 2) return d.getUTCDate() + '일';
+                if (tickMarkType === 3) {
+                    const h = String(d.getUTCHours()).padStart(2, '0');
+                    const m = String(d.getUTCMinutes()).padStart(2, '0');
+                    return `${h}:${m}`;
+                }
+                const h = String(d.getUTCHours()).padStart(2, '0');
+                const m = String(d.getUTCMinutes()).padStart(2, '0');
+                const s = String(d.getUTCSeconds()).padStart(2, '0');
+                return `${h}:${m}:${s}`;
+            }
         },
     });
 
