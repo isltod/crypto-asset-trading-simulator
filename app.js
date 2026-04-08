@@ -1,7 +1,7 @@
 // API Endpoints
 const basePath = window.location.pathname.replace(/\/$/, '');
 const API_URL = basePath + '/api';
-const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + basePath;
+const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + window.location.pathname;
 const BINANCE_REST_URL = 'https://fapi.binance.com/fapi/v1'; // Still used for historical bulk klines
 
 // DOM Elements
@@ -496,6 +496,16 @@ function connectWebSocket(symbol) {
             btnLong.disabled = false;
             btnShort.disabled = false;
         }
+    };
+
+    ws.onclose = () => {
+        console.log('WebSocket disconnected. Reconnecting in 3 seconds...');
+        setTimeout(() => connectWebSocket(symbol), 3000);
+    };
+
+    ws.onerror = (error) => {
+        console.error('WebSocket Error:', error);
+        ws.close();
     };
 }
 
