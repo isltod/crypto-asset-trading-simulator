@@ -16,6 +16,12 @@
                 <h1>Binance Futures</h1>
                 <span class="badge">Virtual Trading</span>
             </div>
+            
+            <div class="auth-controls" id="auth-controls" style="margin-left:auto; display:flex; gap:10px; align-items:center; margin-right:20px;">
+                <span id="user-display" style="color:var(--text-main); font-weight:bold; display:none;"></span>
+                <button id="btn-open-login" class="btn btn-history">Login</button>
+                <button id="btn-logout" class="btn btn-history" style="display:none; background: rgba(246, 70, 93, 0.15); color: #ff6b81; border-color: rgba(246, 70, 93, 0.4);">Logout</button>
+            </div>
             <div class="controls">
                 <div class="custom-select">
                     <select id="symbol-select">
@@ -26,8 +32,9 @@
                 <div class="input-container">
                     <div class="input-group">
                         <span class="label-text">Capital:</span>
-                        <input type="number" id="capital-input" class="capital-input" value="100" min="0" step="10">
+                        <input type="number" id="capital-input" class="capital-input" value="100" min="0" step="10" style="width:100px; background:rgba(255,255,255,0.05); color:#fff;">
                         <span class="badge">USDT</span>
+                        <button id="btn-recharge" class="btn-icon" style="margin-left:5px; font-size:16px;" title="Set Capital">⚙️</button>
                     </div>
 
                     <div class="divider"></div>
@@ -140,6 +147,7 @@
                     <thead>
                         <tr>
                             <th>Side</th>
+                            <th>Lev.</th>
                             <th>Entry Time</th>
                             <th>Exit Time</th>
                             <th>Entry Price</th>
@@ -169,6 +177,24 @@
                 <button id="btn-confirm-cancel" class="btn btn-history" style="min-width: 100px;">Cancel</button>
                 <button id="btn-confirm-ok" class="btn btn-history"
                     style="min-width: 100px; background: rgba(246, 70, 93, 0.2); color: #ff6b81; border-color: rgba(246, 70, 93, 0.4);">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auth / Login Modal -->
+    <div id="auth-modal" class="modal-overlay hidden" style="z-index: 2000;">
+        <div class="modal-content" style="max-width: 350px; text-align: center; padding: 30px;">
+            <div class="modal-header" style="justify-content:center; border-bottom:none;">
+                <h2 id="auth-title">Login to CATS</h2>
+                <button id="btn-close-auth" class="btn-icon" style="position:absolute; right:15px; top:15px;">&times;</button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:15px; margin-top:10px;">
+                <input type="text" id="auth-username" placeholder="Username" style="padding:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:white; border-radius:4px;">
+                <input type="password" id="auth-password" placeholder="Password" style="padding:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:white; border-radius:4px;">
+                <button id="btn-auth-submit" class="btn btn-long" style="width:100%; justify-content:center; padding:10px;">Login</button>
+            </div>
+            <div style="margin-top:15px; color:var(--text-muted); font-size:0.9em;">
+                <span id="auth-toggle-text">Don't have an account? <a href="#" id="auth-toggle-link" style="color:var(--up-color); text-decoration:none;">Register here</a></span>
             </div>
         </div>
     </div>
