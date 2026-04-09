@@ -457,6 +457,32 @@ function updateChartSeries() {
     bbLowerSeries.setData(bbLowerData);
 }
 
+function updateIndicators() {
+    const data = window.klineData;
+    if (!data || data.length === 0) return;
+
+    // Update MA: recalculate last point
+    if (data.length >= maPeriod) {
+        let sum = 0;
+        for (let j = 0; j < maPeriod; j++) sum += data[data.length - 1 - j].close;
+        maSeries.update({ time: data[data.length - 1].time, value: sum / maPeriod });
+    }
+
+    // Update Bollinger Bands: recalculate last point
+    if (data.length >= BB_PERIOD) {
+        let sum = 0;
+        for (let j = 0; j < BB_PERIOD; j++) sum += data[data.length - 1 - j].close;
+        const sma = sum / BB_PERIOD;
+        let varSum = 0;
+        for (let j = 0; j < BB_PERIOD; j++) varSum += Math.pow(data[data.length - 1 - j].close - sma, 2);
+        const stdDev = Math.sqrt(varSum / BB_PERIOD);
+        const t = data[data.length - 1].time;
+        bbMiddleSeries.update({ time: t, value: sma });
+        bbUpperSeries.update({ time: t, value: sma + BB_STD_DEV * stdDev });
+        bbLowerSeries.update({ time: t, value: sma - BB_STD_DEV * stdDev });
+    }
+}
+
 function connectWebSocket(symbol) {
     const qs = authToken ? `?token=${authToken}` : '';
     ws = new WebSocket(`${WS_URL}${qs}`);
@@ -478,6 +504,10 @@ function connectWebSocket(symbol) {
             } else {
                 window.klineData.push(tick);
             }
+
+            // 지표 실시간 업데이트
+            updateIndicators();
+
             updatePriceDisplay(tick.close, lastClose);
 
             if (activePosition && authToken) {
