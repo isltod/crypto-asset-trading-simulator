@@ -1,0 +1,13 @@
+[Unit]
+Description=CATS Backend Python Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/home/ubuntu/nori/cats/run_server.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
