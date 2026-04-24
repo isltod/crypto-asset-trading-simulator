@@ -1,4 +1,7 @@
 #! 뭔가 적용되지 않는다면 git rm -r --cached . 하고 다시 진행
+# 로컬 작업 관련
+*.sqlite
+
 # supabase
 .env*
 

@@ -12,9 +12,13 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const JWT_SECRET = 'cats_super_secret_key_for_demo'; // In production, use env variable
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 const INITIAL_CAPITAL = 100;
 const BASE_PATH = '/cats';
+
+let lastBinanceMessageTime = 0;
+let binanceStatus = "connecting";
+let binanceError = null;
 
 // Middleware
 app.use(express.json());
@@ -125,7 +129,7 @@ app.post(`${BASE_PATH}/api/auth/login`, (req, res) => {
         const match = await bcrypt.compare(password, user.password_hash);
         if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
-        const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
+        const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
         res.json({ token, username });
     });
 });
@@ -220,6 +224,23 @@ app.delete(`${BASE_PATH}/api/history`, authenticateToken, (req, res) => {
     });
 });
 
+// Health/Status endpoint
+app.get(`${BASE_PATH}/api/status`, (req, res) => {
+    const uptime = process.uptime();
+    const timeSinceLastMessage = lastBinanceMessageTime ? (Date.now() - lastBinanceMessageTime) / 1000 : null;
+    
+    res.json({
+        status: "ok",
+        uptime,
+        binance: {
+            status: binanceStatus,
+            lastMessageSecondsAgo: timeSinceLastMessage,
+            error: binanceError
+        },
+        clientsConnected: wss.clients.size
+    });
+});
+
 
 function closePosition(userId, specificPrice, res = null) {
     db.get(`SELECT p.*, a.virtual_capital FROM positions p JOIN accounts a ON p.user_id = a.user_id WHERE p.user_id = ?`, [userId], (err, pos) => {
@@ -305,7 +326,19 @@ wss.on('connection', (ws, req) => {
         }
         connectedClients.delete(ws);
     });
+
+    // Send initial status heartbeat
+    ws.send(JSON.stringify({ type: 'hb', time: Date.now() }));
 });
+
+// Periodic Heartbeat to keep connections alive (every 30s)
+setInterval(() => {
+    wss.clients.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'hb', time: Date.now() }));
+        }
+    });
+}, 30000);
 
 function notifyUser(userId, message) {
     const sockets = userSockets.get(userId);
@@ -320,31 +353,61 @@ function notifyUser(userId, message) {
 
 // Connect to Binance
 let binanceWs = null;
+const SYMBOLS_TO_STREAM = ['btcusdt', 'ethusdt', 'solusdt', 'xrpusdt', 'bnbusdt'];
+
 function setupBinanceStream() {
-    binanceWs = new WebSocket('wss://fstream.binance.com/ws/btcusdt@kline_1m');
+    console.log("Connecting to Binance WebSocket...");
+    binanceStatus = "connecting";
+    
+    // Using combined stream for multi-symbol support
+    const streams = SYMBOLS_TO_STREAM.map(s => `${s}@kline_1m`).join('/');
+    const endpoint = `wss://stream.binance.com:9443/stream?streams=${streams}`;
+    
+    binanceWs = new WebSocket(endpoint);
+    
+    binanceWs.on('open', () => {
+        console.log("Connected to Binance Spot WebSocket.");
+        binanceStatus = "connected";
+        binanceError = null;
+    });
+
     binanceWs.on('message', (data) => {
-        const message = JSON.parse(data);
-        if (message.e === 'kline') {
-            const symbol = message.s;
-            const currentPrice = parseFloat(message.k.c);
-            latestPrices[symbol] = currentPrice;
+        console.log("Raw Binance message:", data.toString());
+        try {
+            const raw = JSON.parse(data);
+            const message = raw.data; // Combined streams wrap data in {stream, data}
+            
+            if (message && message.e === 'kline') {
+                lastBinanceMessageTime = Date.now();
+                const symbol = message.s;
+                const currentPrice = parseFloat(message.k.c);
+                latestPrices[symbol] = currentPrice;
+                console.log(`[Binance] Received kline for ${symbol}. Price: ${currentPrice}. Broadcasting to ${wss.clients.size} clients.`);
 
-            // Broadcast to all connected clients
-            wss.clients.forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(data.toString());
-                }
-            });
+                // Broadcast to all connected clients
+                const broadcastData = JSON.stringify(message);
+                wss.clients.forEach(client => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(broadcastData);
+                    }
+                });
 
-            // Check TPSL logic for all open positions in the DB (simplistic approach for demo)
-            // Note: In production you would cache positions in memory or only check relevant pairs
-            checkTPSL(symbol, currentPrice);
+                checkTPSL(symbol, currentPrice);
+            }
+        } catch (e) {
+            console.error("Error parsing Binance message:", e);
         }
     });
     
-    binanceWs.on('error', console.error);
+    binanceWs.on('error', (err) => {
+        console.error("Binance WS Error:", err.message);
+        binanceStatus = "error";
+        binanceError = err.message;
+    });
+
     binanceWs.on('close', () => {
         console.log("Binance WS closed. Reconnecting in 5s...");
+        binanceStatus = "disconnected";
         setTimeout(setupBinanceStream, 5000);
     });
 }

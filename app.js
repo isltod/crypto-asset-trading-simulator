@@ -2,7 +2,7 @@
 const basePath = window.location.pathname.replace(/\/$/, '');
 const API_URL = basePath + '/api';
 const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + window.location.pathname;
-const BINANCE_REST_URL = 'https://fapi.binance.com/fapi/v1'; // Still used for historical bulk klines
+const BINANCE_REST_URL = 'https://api.binance.com/api/v3'; // Still used for historical bulk klines
 
 // DOM Elements
 const symbolSelect = document.getElementById('symbol-select');
@@ -42,6 +42,13 @@ const authToggleLink = document.getElementById('auth-toggle-link');
 const authTitle = document.getElementById('auth-title');
 const btnRecharge = document.getElementById('btn-recharge');
 
+// Mobile UI DOM
+const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+const headerControls = document.getElementById('header-controls');
+const authControls = document.getElementById('auth-controls');
+const mobileTradeBtn = document.getElementById('mobile-trade-btn');
+const tradePanel = document.getElementById('trade-panel');
+
 // State
 let authToken = localStorage.getItem('cats_token');
 let currentUsername = localStorage.getItem('cats_username');
@@ -57,6 +64,7 @@ let bbMiddleSeries = null;
 let ws = null;
 let lastClose = 0;
 let maPeriod = 20;
+let lastHB = Date.now();
 
 // Tracked from Server
 let virtualCapital = 0;
@@ -185,6 +193,10 @@ async function init() {
     if (authToken) {
         await fetchAccountData();
     }
+    
+    // Check backend health periodically
+    setInterval(updateBackendStatus, 10000);
+    updateBackendStatus();
 
     // Set up Auth bindings
     btnOpenLogin.addEventListener('click', () => {
@@ -194,6 +206,27 @@ async function init() {
         authModal.classList.add('hidden');
     });
     btnLogout.addEventListener('click', handleLogout);
+
+    // Mobile specific interactions
+    if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', () => {
+            headerControls.classList.toggle('show');
+            authControls.classList.toggle('show');
+        });
+    }
+
+    if (mobileTradeBtn) {
+        mobileTradeBtn.addEventListener('click', () => {
+            tradePanel.classList.toggle('show');
+            if (tradePanel.classList.contains('show')) {
+                mobileTradeBtn.innerHTML = '❌ Close';
+                mobileTradeBtn.style.backgroundColor = 'var(--panel-bg)';
+            } else {
+                mobileTradeBtn.innerHTML = '💬 Trade';
+                mobileTradeBtn.style.backgroundColor = 'var(--accent-color)';
+            }
+        });
+    }
     
     btnRecharge.addEventListener('click', async () => {
         if(!authToken) return;
@@ -330,6 +363,26 @@ async function init() {
     resizeObserver.observe(chartContainer);
 }
 
+async function updateBackendStatus() {
+    try {
+        const res = await fetch(API_URL + '/status');
+        const data = await res.json();
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        
+        if (data.binance.status === 'connected') {
+            statusDot.className = 'status-dot online';
+            statusText.textContent = 'Backend: Online';
+        } else {
+            statusDot.className = 'status-dot error';
+            statusText.textContent = `Backend Error: ${data.binance.status}`;
+        }
+    } catch (e) {
+        document.getElementById('status-dot').className = 'status-dot offline';
+        document.getElementById('status-text').textContent = 'Backend: Offline';
+    }
+}
+
 
 // --- Chart & Binance Data Proxy ---
 
@@ -396,7 +449,7 @@ async function loadSymbols() {
     try {
         const response = await fetch(`${BINANCE_REST_URL}/exchangeInfo`);
         const data = await response.json();
-        const symbols = data.symbols.filter(s => s.quoteAsset === 'USDT' && s.contractType === 'PERPETUAL' && s.status === 'TRADING').map(s => s.symbol).sort();
+        const symbols = data.symbols.filter(s => s.quoteAsset === 'USDT' && s.status === 'TRADING').map(s => s.symbol).sort();
         symbolSelect.innerHTML = '';
         symbols.forEach(sym => {
             const option = document.createElement('option');
@@ -515,6 +568,13 @@ function connectWebSocket(symbol) {
             }
 
             lastClose = tick.close;
+        }
+
+        // Heartbeat handling
+        if (message.type === 'hb') {
+            lastHB = Date.now();
+            console.log('Heartbeat received');
+            return;
         }
 
         // Backend Event: Auto Liquidated or TPSL hits
