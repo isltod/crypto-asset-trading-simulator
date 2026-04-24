@@ -306,6 +306,33 @@ body {
     color: var(--down-color);
 }
 
+/* Connection Status Indicator */
+.status-dot {
+    display: inline-block;
+    transition: all 0.3s ease;
+}
+
+.status-dot.online {
+    background: var(--up-color) !important;
+    box-shadow: 0 0 10px rgba(46, 189, 133, 0.4);
+}
+
+.status-dot.offline {
+    background: #94a3b8 !important;
+}
+
+.status-dot.error {
+    background: var(--down-color) !important;
+    box-shadow: 0 0 10px rgba(246, 70, 93, 0.5);
+    animation: status-blink 1.5s infinite ease-in-out;
+}
+
+@keyframes status-blink {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.9); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
 .main-content {
     flex: 1;
     display: flex;
@@ -584,14 +611,104 @@ body {
     font-weight: 600;
 }
 
+/* Mobile UI Toggle Elements */
+.mobile-toggle-btn {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 0.4rem;
+}
+
+.mobile-trade-fab {
+    display: none;
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    background: var(--accent-color);
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: 30px;
+    padding: 0.8rem 1.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    z-index: 90;
+    align-items: center;
+    gap: 0.5rem;
+    backdrop-filter: blur(4px);
+}
+
 @media (max-width: 768px) {
     .header {
-        flex-direction: column;
-        gap: 1rem;
-        align-items: stretch;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.8rem 1rem;
+    }
+
+    .logo {
+        flex-grow: 1;
+    }
+
+    .mobile-toggle-btn {
+        display: flex;
+    }
+
+    .mobile-trade-fab {
+        display: flex;
+    }
+
+    .auth-controls {
+        display: none !important;
+        width: 100%;
+        margin: 0 !important;
+        justify-content: center;
+        padding-top: 10px;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .auth-controls.show {
+        display: flex !important;
     }
 
     .controls {
-        justify-content: space-between;
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+        padding-top: 10px;
+        padding-bottom: 5px;
+    }
+
+    .controls.show {
+        display: flex;
+    }
+
+    .input-container {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .indicator-toggles {
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .trade-panel {
+        display: none;
+        position: absolute;
+        bottom: 80px; 
+        right: 20px;
+        top: auto;
+        min-width: 250px;
+        z-index: 101;
+    }
+
+    .trade-panel.show {
+        display: flex;
     }
 }

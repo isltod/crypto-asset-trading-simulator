@@ -18,11 +18,20 @@
             </div>
             
             <div class="auth-controls" id="auth-controls" style="margin-left:auto; display:flex; gap:10px; align-items:center; margin-right:20px;">
+                <div id="connection-status" class="status-container" style="display:flex; align-items:center; gap:8px; margin-right:10px; padding: 4px 10px; background: rgba(0,0,0,0.2); border-radius: 20px;">
+                    <span id="status-dot" class="status-dot offline" style="width: 8px; height: 8px; border-radius: 50%; background: #94a3b8;"></span>
+                    <span id="status-text" style="font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;">Connecting...</span>
+                </div>
                 <span id="user-display" style="color:var(--text-main); font-weight:bold; display:none;"></span>
                 <button id="btn-open-login" class="btn btn-history">Login</button>
                 <button id="btn-logout" class="btn btn-history" style="display:none; background: rgba(246, 70, 93, 0.15); color: #ff6b81; border-color: rgba(246, 70, 93, 0.4);">Logout</button>
             </div>
-            <div class="controls">
+            
+            <button id="mobile-menu-btn" class="mobile-toggle-btn" title="Toggle Menu">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            </button>
+            
+            <div class="controls" id="header-controls">
                 <div class="custom-select">
                     <select id="symbol-select">
                         <option value="BTCUSDT" selected>BTCUSDT</option>
@@ -105,6 +114,11 @@
 
         <main class="main-content">
             <div id="chart-container" class="chart-container"></div>
+
+            <!-- Mobile Trade Toggle FAB -->
+            <button id="mobile-trade-btn" class="mobile-trade-fab">
+                💬 Trade
+            </button>
 
             <!-- Trade Panel Overlay -->
             <div id="trade-panel" class="trade-panel">
