@@ -98,6 +98,12 @@
                         <span class="slider"></span>
                         <span class="label-text">Bollinger Bands</span>
                     </label>
+
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-wt" checked>
+                        <span class="slider"></span>
+                        <span class="label-text">WaveTrend</span>
+                    </label>
                 </div>
 
                 <div class="input-container">
@@ -114,6 +120,8 @@
 
         <main class="main-content">
             <div id="chart-container" class="chart-container"></div>
+            <div id="chart-resizer" class="chart-resizer"></div>
+            <div id="wt-chart-container" class="wt-chart-container"></div>
 
             <!-- Mobile Trade Toggle FAB -->
             <button id="mobile-trade-btn" class="mobile-trade-fab">

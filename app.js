@@ -66,6 +66,75 @@ let lastClose = 0;
 let maPeriod = 20;
 let lastHB = Date.now();
 
+// WaveTrend State & Constants
+let wtChart = null;
+let wt1Series = null;
+let wt2Series = null;
+const WT_CHANNEL_LEN = 10;
+const WT_AVG_LEN = 21;
+
+// Helper functions for indicators
+function calculateEMA(values, period) {
+    const ema = new Array(values.length).fill(0);
+    if (values.length < period) return ema;
+    
+    let sum = 0;
+    for (let i = 0; i < period; i++) {
+        sum += values[i];
+    }
+    const sma = sum / period;
+    ema[period - 1] = sma;
+    
+    const alpha = 2 / (period + 1);
+    for (let i = period; i < values.length; i++) {
+        ema[i] = values[i] * alpha + ema[i - 1] * (1 - alpha);
+    }
+    return ema;
+}
+
+function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN) {
+    const len = formattedData.length;
+    const wt1Data = [];
+    const wt2Data = [];
+    if (len < n1 + n2) return { wt1Data, wt2Data };
+
+    const ap = formattedData.map(d => (d.high + d.low + d.close) / 3);
+    const esa = calculateEMA(ap, n1);
+    
+    const absDiff = ap.map((val, idx) => Math.abs(val - esa[idx]));
+    const d = calculateEMA(absDiff, n1);
+    
+    const ci = ap.map((val, idx) => {
+        if (d[idx] === 0) return 0;
+        return (val - esa[idx]) / (0.015 * d[idx]);
+    });
+    
+    const wt1 = calculateEMA(ci, n2);
+    
+    // wt2 = sma(wt1, 4)
+    const wt2 = new Array(len).fill(0);
+    for (let i = 3; i < len; i++) {
+        let sum = 0;
+        for (let j = 0; j < 4; j++) {
+            sum += wt1[i - j];
+        }
+        wt2[i] = sum / 4;
+    }
+    
+    const startIdx = n1 + n2;
+    for (let i = 0; i < len; i++) {
+        if (i < startIdx) {
+            wt1Data.push({ time: formattedData[i].time });
+            wt2Data.push({ time: formattedData[i].time });
+        } else {
+            wt1Data.push({ time: formattedData[i].time, value: wt1[i] });
+            wt2Data.push({ time: formattedData[i].time, value: wt2[i] });
+        }
+    }
+    
+    return { wt1Data, wt2Data };
+}
+
 // Tracked from Server
 let virtualCapital = 0;
 let leverage = 1;
@@ -320,6 +389,80 @@ async function init() {
         saveUIConfig();
     });
 
+    const toggleWT = document.getElementById('toggle-wt');
+    const wtContainer = document.getElementById('wt-chart-container');
+    const resizer = document.getElementById('chart-resizer');
+
+    const updateWTVisibility = () => {
+        const isVisible = toggleWT.checked;
+        if (isVisible) {
+            wtContainer.classList.remove('hidden');
+            resizer.classList.remove('hidden');
+        } else {
+            wtContainer.classList.add('hidden');
+            resizer.classList.add('hidden');
+        }
+        saveUIConfig();
+    };
+    toggleWT.addEventListener('change', updateWTVisibility);
+
+    // Resizer Dragging Logic
+    let isResizing = false;
+    let startY = 0;
+    let startHeight = 0;
+
+    const startResize = (clientY) => {
+        isResizing = true;
+        startY = clientY;
+        startHeight = wtContainer.clientHeight;
+        document.body.style.cursor = 'row-resize';
+        resizer.classList.add('resizing');
+    };
+
+    const doResize = (clientY) => {
+        if (!isResizing) return;
+        const dy = clientY - startY;
+        let newHeight = startHeight - dy;
+        if (newHeight < 60) newHeight = 60;
+        if (newHeight > 500) newHeight = 500;
+        wtContainer.style.height = `${newHeight}px`;
+    };
+
+    const stopResize = () => {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            resizer.classList.remove('resizing');
+            saveUIConfig();
+        }
+    };
+
+    resizer.addEventListener('mousedown', (e) => {
+        startResize(e.clientY);
+        e.preventDefault();
+    });
+
+    resizer.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 0) {
+            startResize(e.touches[0].clientY);
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    document.addEventListener('mousemove', (e) => {
+        doResize(e.clientY);
+    });
+
+    document.addEventListener('touchmove', (e) => {
+        if (isResizing && e.touches.length > 0) {
+            doResize(e.touches[0].clientY);
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    document.addEventListener('mouseup', stopResize);
+    document.addEventListener('touchend', stopResize);
+
     // Trading Execution
     btnLong.addEventListener('click', () => executeTrade('LONG'));
     btnShort.addEventListener('click', () => executeTrade('SHORT'));
@@ -361,6 +504,15 @@ async function init() {
         chart.applyOptions({ width, height });
     });
     resizeObserver.observe(chartContainer);
+
+    const wtResizeObserver = new ResizeObserver(entries => {
+        if (!wtChart) return;
+        const { width, height } = entries[0].contentRect;
+        wtChart.applyOptions({ width, height });
+    });
+    wtResizeObserver.observe(wtContainer);
+
+    updateWTVisibility();
 }
 
 async function updateBackendStatus() {
@@ -396,7 +548,10 @@ function initChart() {
             horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
         },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+        rightPriceScale: { 
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            minimumWidth: 80
+        },
         localization: {
             timeFormatter: (time) => {
                 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -443,6 +598,136 @@ function initChart() {
     bbUpperSeries = chart.addLineSeries({ color: 'rgba(56, 189, 248, 0.5)', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-bb').checked });
     bbMiddleSeries = chart.addLineSeries({ color: 'rgba(56, 189, 248, 0.5)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-bb').checked });
     bbLowerSeries = chart.addLineSeries({ color: 'rgba(56, 189, 248, 0.5)', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-bb').checked });
+
+    // Initialize WaveTrend Chart
+    const wtChartContainer = document.getElementById('wt-chart-container');
+    wtChart = LightweightCharts.createChart(wtChartContainer, {
+        width: wtChartContainer.clientWidth || 600,
+        height: wtChartContainer.clientHeight || 150,
+        layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#94a3b8' },
+        grid: {
+            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: { 
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            minimumWidth: 80,
+        },
+        timeScale: {
+            visible: false,
+        },
+    });
+
+    wtChart.priceScale('right').applyOptions({
+        autoScale: true,
+        scaleMargins: {
+            top: 0.1,
+            bottom: 0.1,
+        },
+    });
+
+    wt1Series = wtChart.addLineSeries({ color: '#2ebd85', lineWidth: 1.5, title: 'WT1', crosshairMarkerVisible: true });
+    wt2Series = wtChart.addLineSeries({ color: '#f6465d', lineWidth: 1.5, title: 'WT2', lineStyle: LightweightCharts.LineStyle.Dashed, crosshairMarkerVisible: true });
+
+    // Set horizontal levels for WaveTrend
+    wt1Series.createPriceLine({
+        price: 60,
+        color: 'rgba(246, 70, 93, 0.5)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'Overbought (60)',
+    });
+    wt1Series.createPriceLine({
+        price: 50,
+        color: 'rgba(245, 158, 11, 0.3)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: '(50)',
+    });
+    wt1Series.createPriceLine({
+        price: 0,
+        color: 'rgba(255, 255, 255, 0.15)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: false,
+    });
+    wt1Series.createPriceLine({
+        price: -50,
+        color: 'rgba(245, 158, 11, 0.3)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: '(-50)',
+    });
+    wt1Series.createPriceLine({
+        price: -60,
+        color: 'rgba(46, 189, 133, 0.5)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'Oversold (-60)',
+    });
+
+    // Sync time scales
+    chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
+        wtChart.timeScale().setVisibleLogicalRange(logicalRange);
+    });
+    wtChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
+        chart.timeScale().setVisibleLogicalRange(logicalRange);
+    });
+
+    // Sync crosshairs bidirectionally
+    let isSyncingCrosshair = false;
+    chart.subscribeCrosshairMove(param => {
+        if (isSyncingCrosshair) return;
+        isSyncingCrosshair = true;
+        try {
+            if (!param || !param.time || !param.point) {
+                wtChart.clearCrosshairPosition();
+            } else {
+                const time = param.time;
+                let price = 0;
+                if (window.lastWtData && window.lastWtData.wt1Data) {
+                    const match = window.lastWtData.wt1Data.find(d => d.time === time);
+                    if (match && match.value !== undefined) {
+                        price = match.value;
+                    }
+                }
+                wtChart.setCrosshairPosition(price, time, wt1Series);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            isSyncingCrosshair = false;
+        }
+    });
+
+    wtChart.subscribeCrosshairMove(param => {
+        if (isSyncingCrosshair) return;
+        isSyncingCrosshair = true;
+        try {
+            if (!param || !param.time || !param.point) {
+                chart.clearCrosshairPosition();
+            } else {
+                const time = param.time;
+                let price = 0;
+                if (window.klineData) {
+                    const match = window.klineData.find(d => d.time === time);
+                    if (match) {
+                        price = match.close;
+                    }
+                }
+                chart.setCrosshairPosition(price, time, candleSeries);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            isSyncingCrosshair = false;
+        }
+    });
 }
 
 async function loadSymbols() {
@@ -508,6 +793,11 @@ function updateChartSeries() {
     bbMiddleSeries.setData(bbMiddleData);
     bbUpperSeries.setData(bbUpperData);
     bbLowerSeries.setData(bbLowerData);
+
+    const wtData = calculateWaveTrend(formattedData);
+    window.lastWtData = wtData;
+    wt1Series.setData(wtData.wt1Data);
+    wt2Series.setData(wtData.wt2Data);
 }
 
 function updateIndicators() {
@@ -533,6 +823,14 @@ function updateIndicators() {
         bbMiddleSeries.update({ time: t, value: sma });
         bbUpperSeries.update({ time: t, value: sma + BB_STD_DEV * stdDev });
         bbLowerSeries.update({ time: t, value: sma - BB_STD_DEV * stdDev });
+    }
+
+    // Update WaveTrend: recalculate last point
+    const wtData = calculateWaveTrend(data);
+    window.lastWtData = wtData;
+    if (wtData.wt1Data.length > 0) {
+        wt1Series.update(wtData.wt1Data[wtData.wt1Data.length - 1]);
+        wt2Series.update(wtData.wt2Data[wtData.wt2Data.length - 1]);
     }
 }
 
@@ -689,7 +987,9 @@ function saveUIConfig() {
     const uiConfig = {
         showMA: document.getElementById('toggle-ma').checked,
         maPeriod: parseInt(document.getElementById('ma-length').value, 10),
-        showBB: document.getElementById('toggle-bb').checked
+        showBB: document.getElementById('toggle-bb').checked,
+        showWT: document.getElementById('toggle-wt').checked,
+        wtHeight: parseInt(document.getElementById('wt-chart-container').style.height || '150', 10)
     };
     localStorage.setItem('cats_ui_config', JSON.stringify(uiConfig));
 }
@@ -704,6 +1004,14 @@ function loadUIConfig() {
             if (config.maPeriod) {
                 document.getElementById('ma-length').value = config.maPeriod;
                 maPeriod = config.maPeriod;
+            }
+            if (typeof config.showWT === 'boolean') {
+                document.getElementById('toggle-wt').checked = config.showWT;
+            } else {
+                document.getElementById('toggle-wt').checked = true;
+            }
+            if (config.wtHeight) {
+                document.getElementById('wt-chart-container').style.height = `${config.wtHeight}px`;
             }
         }
     } catch(e) {}
