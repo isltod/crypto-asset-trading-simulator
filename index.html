@@ -99,11 +99,36 @@
                         <span class="label-text">Bollinger Bands</span>
                     </label>
 
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-wt" checked>
-                        <span class="slider"></span>
-                        <span class="label-text">WaveTrend</span>
-                    </label>
+                    <div class="toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="toggle-wt" checked>
+                            <span class="slider"></span>
+                            <span class="label-text">WaveTrend</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="wt-params-container" class="input-container hidden">
+                    <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">WT Params:</span>
+                    <div class="input-group" title="Channel Length (n1)">
+                        <span class="label-text" style="font-size:0.7rem;">n1</span>
+                        <input type="number" id="wt-n1" class="length-input" value="10" min="1" max="100">
+                    </div>
+                    <div class="divider"></div>
+                    <div class="input-group" title="Average Length (n2)">
+                        <span class="label-text" style="font-size:0.7rem;">n2</span>
+                        <input type="number" id="wt-n2" class="length-input" value="21" min="1" max="100">
+                    </div>
+                    <div class="divider"></div>
+                    <div class="input-group" title="Signal Length">
+                        <span class="label-text" style="font-size:0.7rem;">Sig</span>
+                        <input type="number" id="wt-sig" class="length-input" value="4" min="1" max="100">
+                    </div>
+                    <div class="divider"></div>
+                    <div class="input-group" title="Overbought/Oversold Level">
+                        <span class="label-text" style="font-size:0.7rem;">OB/OS</span>
+                        <input type="number" id="wt-ob" class="length-input" value="53" min="1" max="100">
+                    </div>
                 </div>
 
                 <div class="input-container">

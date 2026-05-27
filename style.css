@@ -670,6 +670,10 @@ body {
     backdrop-filter: blur(4px);
 }
 
+.hidden {
+    display: none !important;
+}
+
 @media (max-width: 768px) {
     .header {
         flex-direction: row;

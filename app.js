@@ -70,8 +70,11 @@ let lastHB = Date.now();
 let wtChart = null;
 let wt1Series = null;
 let wt2Series = null;
-const WT_CHANNEL_LEN = 10;
-const WT_AVG_LEN = 21;
+let WT_CHANNEL_LEN = 10;
+let WT_AVG_LEN = 21;
+let WT_SIG_LEN = 4;
+let WT_OB_LEVEL = 53;
+let wtPriceLines = [];
 
 // Helper functions for indicators
 function calculateEMA(values, period) {
@@ -92,7 +95,7 @@ function calculateEMA(values, period) {
     return ema;
 }
 
-function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN) {
+function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN, sigLen = WT_SIG_LEN) {
     const len = formattedData.length;
     const wt1Data = [];
     const wt2Data = [];
@@ -111,14 +114,14 @@ function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN)
     
     const wt1 = calculateEMA(ci, n2);
     
-    // wt2 = sma(wt1, 4)
+    // wt2 = sma(wt1, sigLen)
     const wt2 = new Array(len).fill(0);
-    for (let i = 3; i < len; i++) {
+    for (let i = sigLen - 1; i < len; i++) {
         let sum = 0;
-        for (let j = 0; j < 4; j++) {
+        for (let j = 0; j < sigLen; j++) {
             sum += wt1[i - j];
         }
-        wt2[i] = sum / 4;
+        wt2[i] = sum / sigLen;
     }
     
     const startIdx = n1 + n2;
@@ -133,6 +136,117 @@ function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN)
     }
     
     return { wt1Data, wt2Data };
+}
+
+function applyWTMarkers() {
+    const toggleWT = document.getElementById('toggle-wt');
+    if (!toggleWT || !candleSeries || !wt1Series) return;
+
+    if (!toggleWT.checked) {
+        candleSeries.setMarkers([]);
+        wt1Series.setMarkers([]);
+        return;
+    }
+
+    const formattedData = window.klineData;
+    const wtData = window.lastWtData;
+    if (!formattedData || !wtData || !wtData.wt1Data || !wtData.wt2Data) return;
+
+    const markers = [];
+    const wtMarkers = [];
+    const len = formattedData.length;
+
+    for (let i = 1; i < len; i++) {
+        const prevWt1 = wtData.wt1Data[i - 1].value;
+        const prevWt2 = wtData.wt2Data[i - 1].value;
+        const currWt1 = wtData.wt1Data[i].value;
+        const currWt2 = wtData.wt2Data[i].value;
+
+        if (prevWt1 === undefined || prevWt2 === undefined || currWt1 === undefined || currWt2 === undefined) {
+            continue;
+        }
+
+        const time = formattedData[i].time;
+
+        // Long Signal: wt1 crosses above wt2 and wt1 < -WT_OB_LEVEL
+        if (prevWt1 < prevWt2 && currWt1 > currWt2 && currWt1 < -WT_OB_LEVEL) {
+            markers.push({
+                time: time,
+                position: 'belowBar',
+                color: '#2ebd85',
+                shape: 'arrowUp',
+                text: 'LONG',
+                size: 1
+            });
+            wtMarkers.push({
+                time: time,
+                position: 'belowBar',
+                color: '#2ebd85',
+                shape: 'circle',
+                text: 'L',
+                size: 1
+            });
+        }
+        // Short Signal: wt1 crosses below wt2 and wt1 > WT_OB_LEVEL
+        else if (prevWt1 > prevWt2 && currWt1 < currWt2 && currWt1 > WT_OB_LEVEL) {
+            markers.push({
+                time: time,
+                position: 'aboveBar',
+                color: '#f6465d',
+                shape: 'arrowDown',
+                text: 'SHORT',
+                size: 1
+            });
+            wtMarkers.push({
+                time: time,
+                position: 'aboveBar',
+                color: '#f6465d',
+                shape: 'circle',
+                text: 'S',
+                size: 1
+            });
+        }
+    }
+
+    candleSeries.setMarkers(markers);
+    wt1Series.setMarkers(wtMarkers);
+}
+
+function updateWTPriceLines() {
+    wtPriceLines.forEach(line => {
+        try {
+            wt1Series.removePriceLine(line);
+        } catch(e) {}
+    });
+    wtPriceLines = [];
+
+    if (!wt1Series) return;
+
+    const obLine = wt1Series.createPriceLine({
+        price: WT_OB_LEVEL,
+        color: 'rgba(250, 204, 21, 0.8)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `Overbought (${WT_OB_LEVEL})`,
+    });
+    const zeroLine = wt1Series.createPriceLine({
+        price: 0,
+        color: 'rgba(255, 255, 255, 0.3)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: false,
+    });
+    const osLine = wt1Series.createPriceLine({
+        price: -WT_OB_LEVEL,
+        color: 'rgba(250, 204, 21, 0.8)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `Oversold (-${WT_OB_LEVEL})`,
+    });
+
+    wtPriceLines.push(obLine, zeroLine, osLine);
 }
 
 // Tracked from Server
@@ -392,19 +506,48 @@ async function init() {
     const toggleWT = document.getElementById('toggle-wt');
     const wtContainer = document.getElementById('wt-chart-container');
     const resizer = document.getElementById('chart-resizer');
+    const wtParamsContainer = document.getElementById('wt-params-container');
 
     const updateWTVisibility = () => {
         const isVisible = toggleWT.checked;
         if (isVisible) {
             wtContainer.classList.remove('hidden');
             resizer.classList.remove('hidden');
+            wtParamsContainer?.classList.remove('hidden');
         } else {
             wtContainer.classList.add('hidden');
             resizer.classList.add('hidden');
+            wtParamsContainer?.classList.add('hidden');
         }
         saveUIConfig();
+        applyWTMarkers();
     };
     toggleWT.addEventListener('change', updateWTVisibility);
+
+    // WaveTrend Parameter Inputs Event Listeners
+    const bindWTParamInput = (id, minVal) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.addEventListener('change', (e) => {
+            let val = parseInt(e.target.value, 10);
+            if (isNaN(val) || val < minVal) val = minVal;
+            e.target.value = val;
+            
+            if (id === 'wt-n1') WT_CHANNEL_LEN = val;
+            else if (id === 'wt-n2') WT_AVG_LEN = val;
+            else if (id === 'wt-sig') WT_SIG_LEN = val;
+            else if (id === 'wt-ob') WT_OB_LEVEL = val;
+
+            updateWTPriceLines();
+            if (window.klineData) updateChartSeries();
+            saveUIConfig();
+        });
+    };
+
+    bindWTParamInput('wt-n1', 1);
+    bindWTParamInput('wt-n2', 1);
+    bindWTParamInput('wt-sig', 1);
+    bindWTParamInput('wt-ob', 1);
 
     // Resizer Dragging Logic
     let isResizing = false;
@@ -631,45 +774,7 @@ function initChart() {
     wt2Series = wtChart.addLineSeries({ color: '#f6465d', lineWidth: 1.5, title: 'WT2', lineStyle: LightweightCharts.LineStyle.Dashed, crosshairMarkerVisible: true });
 
     // Set horizontal levels for WaveTrend
-    wt1Series.createPriceLine({
-        price: 60,
-        color: 'rgba(246, 70, 93, 0.5)',
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'Overbought (60)',
-    });
-    wt1Series.createPriceLine({
-        price: 50,
-        color: 'rgba(245, 158, 11, 0.3)',
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: '(50)',
-    });
-    wt1Series.createPriceLine({
-        price: 0,
-        color: 'rgba(255, 255, 255, 0.15)',
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: false,
-    });
-    wt1Series.createPriceLine({
-        price: -50,
-        color: 'rgba(245, 158, 11, 0.3)',
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: '(-50)',
-    });
-    wt1Series.createPriceLine({
-        price: -60,
-        color: 'rgba(46, 189, 133, 0.5)',
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'Oversold (-60)',
-    });
+    updateWTPriceLines();
 
     // Sync time scales
     chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
@@ -798,6 +903,7 @@ function updateChartSeries() {
     window.lastWtData = wtData;
     wt1Series.setData(wtData.wt1Data);
     wt2Series.setData(wtData.wt2Data);
+    applyWTMarkers();
 }
 
 function updateIndicators() {
@@ -832,6 +938,7 @@ function updateIndicators() {
         wt1Series.update(wtData.wt1Data[wtData.wt1Data.length - 1]);
         wt2Series.update(wtData.wt2Data[wtData.wt2Data.length - 1]);
     }
+    applyWTMarkers();
 }
 
 function connectWebSocket(symbol) {
@@ -989,7 +1096,11 @@ function saveUIConfig() {
         maPeriod: parseInt(document.getElementById('ma-length').value, 10),
         showBB: document.getElementById('toggle-bb').checked,
         showWT: document.getElementById('toggle-wt').checked,
-        wtHeight: parseInt(document.getElementById('wt-chart-container').style.height || '150', 10)
+        wtHeight: parseInt(document.getElementById('wt-chart-container').style.height || '150', 10),
+        wtN1: parseInt(document.getElementById('wt-n1')?.value || '10', 10),
+        wtN2: parseInt(document.getElementById('wt-n2')?.value || '21', 10),
+        wtSig: parseInt(document.getElementById('wt-sig')?.value || '4', 10),
+        wtOb: parseInt(document.getElementById('wt-ob')?.value || '53', 10)
     };
     localStorage.setItem('cats_ui_config', JSON.stringify(uiConfig));
 }
@@ -1012,6 +1123,22 @@ function loadUIConfig() {
             }
             if (config.wtHeight) {
                 document.getElementById('wt-chart-container').style.height = `${config.wtHeight}px`;
+            }
+            if (config.wtN1 && document.getElementById('wt-n1')) {
+                document.getElementById('wt-n1').value = config.wtN1;
+                WT_CHANNEL_LEN = config.wtN1;
+            }
+            if (config.wtN2 && document.getElementById('wt-n2')) {
+                document.getElementById('wt-n2').value = config.wtN2;
+                WT_AVG_LEN = config.wtN2;
+            }
+            if (config.wtSig && document.getElementById('wt-sig')) {
+                document.getElementById('wt-sig').value = config.wtSig;
+                WT_SIG_LEN = config.wtSig;
+            }
+            if (config.wtOb && document.getElementById('wt-ob')) {
+                document.getElementById('wt-ob').value = config.wtOb;
+                WT_OB_LEVEL = config.wtOb;
             }
         }
     } catch(e) {}
