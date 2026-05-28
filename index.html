@@ -154,6 +154,30 @@
                 </div>
 
                 <div class="sidebar-section">
+                    <div class="section-title">Auto Trading</div>
+                    <div class="sidebar-row">
+                        <span class="sidebar-label">Signal Generator</span>
+                        <div class="custom-select" style="width: 130px;">
+                            <select id="signal-select" style="padding: 4px 24px 4px 8px; font-size: 12px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 6px; width: 100%;">
+                                <option value="none">None</option>
+                                <option value="wave_trend">WaveTrend</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="sidebar-row">
+                        <span class="sidebar-label">Auto Trade Status</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="toggle-autotrade">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="sidebar-row">
+                        <span class="sidebar-label">Bot State</span>
+                        <span id="bot-state-badge" class="badge badge-inactive">Off</span>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
                     <div class="section-title">Trade Execution</div>
                     <div class="order-buttons">
                         <button id="btn-long" class="btn btn-long">Long</button>
