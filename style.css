@@ -817,3 +817,27 @@ body {
         display: flex;
     }
 }
+
+/* Bot State Badge Styles */
+.badge-inactive {
+    background: rgba(148, 163, 184, 0.15) !important;
+    color: #94a3b8 !important;
+}
+
+.badge-active {
+    background: rgba(59, 130, 246, 0.15) !important;
+    color: #3b82f6 !important;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.2);
+}
+
+.badge-long {
+    background: rgba(46, 189, 133, 0.15) !important;
+    color: #2ebd85 !important;
+    box-shadow: 0 0 8px rgba(46, 189, 133, 0.2);
+}
+
+.badge-short {
+    background: rgba(246, 70, 93, 0.15) !important;
+    color: #f6465d !important;
+    box-shadow: 0 0 8px rgba(246, 70, 93, 0.2);
+}

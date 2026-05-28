@@ -42,6 +42,11 @@ const authToggleLink = document.getElementById('auth-toggle-link');
 const authTitle = document.getElementById('auth-title');
 const btnRecharge = document.getElementById('btn-recharge');
 
+// Auto Trading DOM
+const signalSelect = document.getElementById('signal-select');
+const toggleAutoTrade = document.getElementById('toggle-autotrade');
+const botStateBadge = document.getElementById('bot-state-badge');
+
 // Mobile UI DOM
 const mobileMenuBtn = document.getElementById('mobile-menu-btn');
 const headerControls = document.getElementById('header-controls');
@@ -65,6 +70,10 @@ let ws = null;
 let lastClose = 0;
 let maPeriod = 20;
 let lastHB = Date.now();
+
+// Auto Trading State
+let autoTradeEnabled = false;
+let signalType = 'none';
 
 // WaveTrend State & Constants
 let wtChart = null;
@@ -297,6 +306,20 @@ function handleLogout() {
     activePosition = null;
     tradeHistory = [];
     ws?.close();
+    
+    // Reset auto trade states
+    autoTradeEnabled = false;
+    signalType = 'none';
+    if (signalSelect) {
+        signalSelect.value = 'none';
+        signalSelect.disabled = true;
+    }
+    if (toggleAutoTrade) {
+        toggleAutoTrade.checked = false;
+        toggleAutoTrade.disabled = true;
+    }
+    updateBotState();
+
     updateAuthUI();
     connectWebSocket(currentSymbol); // Connect anonymously to view chart
 }
@@ -313,6 +336,8 @@ function updateAuthUI() {
         btnRecharge.disabled = false;
         document.getElementById('leverage-input').disabled = false;
         document.getElementById('capital-input').disabled = false;
+        if (signalSelect) signalSelect.disabled = false;
+        if (toggleAutoTrade) toggleAutoTrade.disabled = false;
     } else {
         btnOpenLogin.style.display = 'block';
         btnLogout.style.display = 'none';
@@ -324,6 +349,8 @@ function updateAuthUI() {
         document.getElementById('leverage-input').disabled = true;
         document.getElementById('capital-input').disabled = true;
         document.getElementById('capital-input').value = '-';
+        if (signalSelect) signalSelect.disabled = true;
+        if (toggleAutoTrade) toggleAutoTrade.disabled = true;
         
         activePosInfo.classList.add('hidden');
     }
@@ -340,12 +367,17 @@ async function fetchAccountData() {
         tpslEnabled = acc.tpsl_enabled === 1;
         tpRoi = acc.tp_roi;
         slRoi = acc.sl_roi;
+        autoTradeEnabled = acc.auto_trade_enabled === 1;
+        signalType = acc.signal_type || 'none';
         
         document.getElementById('capital-input').value = virtualCapital.toFixed(2);
         document.getElementById('leverage-input').value = leverage;
         document.getElementById('toggle-tpsl').checked = tpslEnabled;
         document.getElementById('tp-input').value = tpRoi;
         document.getElementById('sl-input').value = slRoi;
+
+        if (signalSelect) signalSelect.value = signalType;
+        if (toggleAutoTrade) toggleAutoTrade.checked = autoTradeEnabled;
 
         if (data.activePosition) {
             activePosition = data.activePosition;
@@ -354,6 +386,56 @@ async function fetchAccountData() {
             activePosition = null;
             activePosInfo.classList.add('hidden');
         }
+        updateBotState();
+    } catch (e) {}
+}
+
+function updateBotState() {
+    if (!botStateBadge) return;
+    
+    if (!autoTradeEnabled || signalType === 'none') {
+        botStateBadge.className = 'badge badge-inactive';
+        botStateBadge.textContent = 'Off';
+        return;
+    }
+    
+    if (activePosition) {
+        if (activePosition.side === 'LONG') {
+            botStateBadge.className = 'badge badge-long';
+            botStateBadge.textContent = 'LONG Active';
+        } else {
+            botStateBadge.className = 'badge badge-short';
+            botStateBadge.textContent = 'SHORT Active';
+        }
+    } else {
+        botStateBadge.className = 'badge badge-active';
+        botStateBadge.textContent = 'Monitoring';
+    }
+}
+
+async function updateConfig() {
+    if(!authToken) return;
+    const wtN1 = parseInt(document.getElementById('wt-n1')?.value || WT_CHANNEL_LEN, 10);
+    const wtN2 = parseInt(document.getElementById('wt-n2')?.value || WT_AVG_LEN, 10);
+    const wtSig = parseInt(document.getElementById('wt-sig')?.value || WT_SIG_LEN, 10);
+    const wtOb = parseInt(document.getElementById('wt-ob')?.value || WT_OB_LEVEL, 10);
+    
+    try {
+        await apiCall('/account/config', 'POST', {
+            leverage: parseInt(document.getElementById('leverage-input').value) || 1,
+            tpsl_enabled: document.getElementById('toggle-tpsl').checked,
+            tp_roi: parseFloat(document.getElementById('tp-input').value) || 10,
+            sl_roi: parseFloat(document.getElementById('sl-input').value) || -5,
+            auto_trade_enabled: toggleAutoTrade ? toggleAutoTrade.checked : false,
+            signal_type: signalSelect ? signalSelect.value : 'none',
+            wt_n1: wtN1,
+            wt_n2: wtN2,
+            wt_sig: wtSig,
+            wt_ob: wtOb
+        });
+        autoTradeEnabled = toggleAutoTrade ? toggleAutoTrade.checked : false;
+        signalType = signalSelect ? signalSelect.value : 'none';
+        updateBotState();
     } catch (e) {}
 }
 
@@ -466,21 +548,12 @@ async function init() {
         } catch(e) {}
     });
 
-    // Config updating
-    const updateConfig = async () => {
-        if(!authToken) return;
-        await apiCall('/account/config', 'POST', {
-            leverage: parseInt(document.getElementById('leverage-input').value) || 1,
-            tpsl_enabled: document.getElementById('toggle-tpsl').checked,
-            tp_roi: parseFloat(document.getElementById('tp-input').value) || 10,
-            sl_roi: parseFloat(document.getElementById('sl-input').value) || -5
-        });
-    };
-
     document.getElementById('leverage-input').addEventListener('change', updateConfig);
     document.getElementById('toggle-tpsl').addEventListener('change', updateConfig);
     document.getElementById('tp-input').addEventListener('change', updateConfig);
     document.getElementById('sl-input').addEventListener('change', updateConfig);
+    if (toggleAutoTrade) toggleAutoTrade.addEventListener('change', updateConfig);
+    if (signalSelect) signalSelect.addEventListener('change', updateConfig);
 
     // Indicator toggles (local only)
     document.getElementById('toggle-ma').addEventListener('change', (e) => {
@@ -528,7 +601,7 @@ async function init() {
     const bindWTParamInput = (id, minVal) => {
         const input = document.getElementById(id);
         if (!input) return;
-        input.addEventListener('change', (e) => {
+        input.addEventListener('change', async (e) => {
             let val = parseInt(e.target.value, 10);
             if (isNaN(val) || val < minVal) val = minVal;
             e.target.value = val;
@@ -541,6 +614,10 @@ async function init() {
             updateWTPriceLines();
             if (window.klineData) updateChartSeries();
             saveUIConfig();
+            
+            if (authToken) {
+                await updateConfig();
+            }
         });
     };
 
@@ -982,14 +1059,19 @@ function connectWebSocket(symbol) {
             return;
         }
 
-        // Backend Event: Auto Liquidated or TPSL hits
+        // Backend Event: Auto Trade Position Opened
+        if (message.type === 'position_opened') {
+            activePosition = message.data;
+            renderActivePosition();
+            fetchAccountData();
+        }
+
+        // Backend Event: Position Closed (TPSL, Liquidation, or Auto Trade reversal)
         if (message.type === 'position_closed') {
-            alert(`Position automatically closed! PnL: ${message.data.pnl.toFixed(2)}`);
+            alert(`[Position Closed] PnL: ${message.data.pnl.toFixed(2)} USDT (${message.data.roe.toFixed(2)}%)`);
             activePosition = null;
-            document.getElementById('capital-input').value = message.data.newCapital.toFixed(2);
             activePosInfo.classList.add('hidden');
-            btnLong.disabled = false;
-            btnShort.disabled = false;
+            fetchAccountData();
         }
     };
 
