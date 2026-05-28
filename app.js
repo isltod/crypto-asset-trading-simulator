@@ -697,6 +697,41 @@ async function init() {
 
     btnCloseHistory.addEventListener('click', () => historyModal.classList.add('hidden'));
 
+    if (btnExportCsv) {
+        btnExportCsv.addEventListener('click', () => {
+            if (!tradeHistory || tradeHistory.length === 0) {
+                alert("내보낼 거래 기록이 없습니다.");
+                return;
+            }
+
+            const headers = ["Side", "Leverage", "Entry Time", "Exit Time", "Entry Price", "Exit Price", "PnL", "ROE(%)", "Fee", "Capital Before", "Capital After"];
+            const rows = tradeHistory.map(row => [
+                row.side,
+                row.leverage || 1,
+                `"${new Date(row.entry_time).toLocaleString()}"`,
+                `"${new Date(row.exit_time).toLocaleString()}"`,
+                row.entry_price.toFixed(2),
+                row.exit_price.toFixed(2),
+                row.pnl.toFixed(2),
+                row.roe.toFixed(2),
+                row.fee.toFixed(2),
+                row.capital_before.toFixed(2),
+                row.capital_after.toFixed(2)
+            ]);
+
+            const csvContent = [headers.join(",")].concat(rows.map(e => e.join(","))).join("\n");
+            
+            const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `CATS_Trade_History_${new Date().toISOString().slice(0, 10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    }
+
     btnClearHistory.addEventListener('click', () => {
         if (tradeHistory.length === 0) return alert("기록된 거래 내역이 없습니다.");
         confirmModal.classList.remove('hidden');
