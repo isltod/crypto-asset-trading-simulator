@@ -386,6 +386,12 @@ async function fetchAccountData() {
             activePosition = null;
             activePosInfo.classList.add('hidden');
         }
+        
+        if (acc.symbol && acc.symbol !== currentSymbol) {
+            currentSymbol = acc.symbol;
+            symbolSelect.value = currentSymbol;
+            await loadChartData(currentSymbol);
+        }
         updateBotState();
     } catch (e) {}
 }
@@ -431,7 +437,8 @@ async function updateConfig() {
             wt_n1: wtN1,
             wt_n2: wtN2,
             wt_sig: wtSig,
-            wt_ob: wtOb
+            wt_ob: wtOb,
+            symbol: currentSymbol
         });
         autoTradeEnabled = toggleAutoTrade ? toggleAutoTrade.checked : false;
         signalType = signalSelect ? signalSelect.value : 'none';
@@ -751,6 +758,9 @@ async function init() {
     symbolSelect.addEventListener('change', async (e) => {
         currentSymbol = e.target.value;
         await loadChartData(currentSymbol);
+        if (authToken) {
+            await updateConfig();
+        }
     });
 
     const resizeObserver = new ResizeObserver(entries => {

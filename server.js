@@ -54,6 +54,7 @@ db.serialize(() => {
         wt_n2 INTEGER NOT NULL DEFAULT 21,
         wt_sig INTEGER NOT NULL DEFAULT 4,
         wt_ob INTEGER NOT NULL DEFAULT 53,
+        symbol TEXT NOT NULL DEFAULT 'BTCUSDT',
         FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
 
@@ -96,6 +97,7 @@ db.serialize(() => {
     db.run(`ALTER TABLE accounts ADD COLUMN wt_n2 INTEGER NOT NULL DEFAULT 21`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN wt_sig INTEGER NOT NULL DEFAULT 4`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN wt_ob INTEGER NOT NULL DEFAULT 53`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN symbol TEXT NOT NULL DEFAULT 'BTCUSDT'`, (err) => {});
 });
 
 // Auth Middleware
@@ -179,7 +181,8 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         wt_n1, 
         wt_n2, 
         wt_sig, 
-        wt_ob 
+        wt_ob,
+        symbol
     } = req.body;
 
     db.get(`SELECT * FROM accounts WHERE user_id = ?`, [userId], (err, row) => {
@@ -195,16 +198,19 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         const updatedWtN2 = wt_n2 !== undefined ? wt_n2 : row.wt_n2;
         const updatedWtSig = wt_sig !== undefined ? wt_sig : row.wt_sig;
         const updatedWtOb = wt_ob !== undefined ? wt_ob : row.wt_ob;
+        const updatedSymbol = symbol !== undefined ? symbol : row.symbol;
 
         db.run(`UPDATE accounts SET 
             leverage = ?, tpsl_enabled = ?, tp_roi = ?, sl_roi = ?, 
             auto_trade_enabled = ?, signal_type = ?, 
-            wt_n1 = ?, wt_n2 = ?, wt_sig = ?, wt_ob = ? 
+            wt_n1 = ?, wt_n2 = ?, wt_sig = ?, wt_ob = ?,
+            symbol = ?
             WHERE user_id = ?`, 
             [
                 updatedLeverage, updatedTpsl, updatedTp, updatedSl, 
                 updatedAutoTrade, updatedSignalType, 
                 updatedWtN1, updatedWtN2, updatedWtSig, updatedWtOb, 
+                updatedSymbol,
                 userId
             ], 
             (err) => {
@@ -216,6 +222,8 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
 
 // In-memory latest prices for backend logic (TPSL processing)
 const latestPrices = {};
+const closingUsers = new Set();
+const openingUsers = new Set();
 
 app.post(`${BASE_PATH}/api/trade/open`, authenticateToken, (req, res) => {
     const userId = req.user.userId;
@@ -291,15 +299,25 @@ app.get(`${BASE_PATH}/api/status`, (req, res) => {
 
 
 function closePosition(userId, specificPrice, res = null, cb = null) {
+    if (closingUsers.has(userId)) {
+        if (res) res.status(400).json({ error: "Close position already in progress" });
+        if (cb) cb(false);
+        return;
+    }
+    closingUsers.add(userId);
+
     db.get(`SELECT p.*, a.virtual_capital FROM positions p JOIN accounts a ON p.user_id = a.user_id WHERE p.user_id = ?`, [userId], (err, pos) => {
         if (err || !pos) {
+            closingUsers.delete(userId);
             if (res) res.status(400).json({ error: "No open position" });
             if (cb) cb(false);
             return;
         }
 
-        const closePrice = specificPrice || latestPrices[pos.symbol];
+        // Prioritize server's latest tracked price for the specific position symbol to prevent cross-symbol price bugs
+        const closePrice = latestPrices[pos.symbol] || specificPrice;
         if (!closePrice) {
+            closingUsers.delete(userId);
             if (res) res.status(400).json({ error: "Price not available" });
             if (cb) cb(false);
             return;
@@ -331,6 +349,7 @@ function closePosition(userId, specificPrice, res = null, cb = null) {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [userId, pos.symbol, pos.side, pos.entry_time, pos.entry_price, closePrice, pnl, roe, totalFee, pos.capital_before, newVirtualCapital, pos.leverage]);
             db.run(`DELETE FROM positions WHERE user_id = ?`, [userId], () => {
+                closingUsers.delete(userId);
                 const result = { pnl, roe, totalFee, newCapital: newVirtualCapital, closePrice };
                 
                 notifyUser(userId, { type: 'position_closed', data: result });
@@ -429,7 +448,7 @@ const klineHistories = {};
 async function initKlineHistories() {
     for (const rawSymbol of SYMBOLS_TO_STREAM) {
         const symbol = rawSymbol.toUpperCase();
-        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=200`;
+        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=1000`;
         try {
             const data = await getJson(url);
             klineHistories[symbol] = data.map(d => ({
@@ -493,36 +512,52 @@ function calculateWaveTrend(formattedData, n1, n2, sigLen) {
         wt2[i] = sum / sigLen;
     }
     
+    const startIdx = n1 + n2;
     for (let i = 0; i < len; i++) {
-        wt1Data.push(wt1[i]);
-        wt2Data.push(wt2[i]);
+        if (i < startIdx) {
+            wt1Data.push(undefined);
+            wt2Data.push(undefined);
+        } else {
+            wt1Data.push(wt1[i]);
+            wt2Data.push(wt2[i]);
+        }
     }
     
     return { wt1Data, wt2Data };
 }
 
 function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
+    if (openingUsers.has(userId)) {
+        if (cb) cb(false);
+        return;
+    }
+    openingUsers.add(userId);
+
     const entryPrice = latestPrices[symbol] || currentPrice;
     if (!entryPrice) {
+        openingUsers.delete(userId);
         if (cb) cb(false);
         return;
     }
 
     db.serialize(() => {
         db.get(`SELECT * FROM positions WHERE user_id = ?`, [userId], (err, pos) => {
-            if (pos) {
+            if (pos || err) {
+                openingUsers.delete(userId);
                 if (cb) cb(false);
                 return; // Position already open
             }
 
             db.get(`SELECT * FROM accounts WHERE user_id = ?`, [userId], (err, account) => {
                 if (!account || err) {
+                    openingUsers.delete(userId);
                     if (cb) cb(false);
                     return;
                 }
                 
                 const margin = account.virtual_capital;
                 if (margin <= 0) {
+                    openingUsers.delete(userId);
                     console.log(`[AutoTrade] User ${userId} has insufficient capital: ${margin}`);
                     if (cb) cb(false);
                     return;
@@ -536,12 +571,14 @@ function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
 
                 db.run(`UPDATE accounts SET virtual_capital = ? WHERE user_id = ?`, [newCapital, userId], (err) => {
                     if (err) {
+                        openingUsers.delete(userId);
                         if (cb) cb(false);
                         return;
                     }
                     db.run(`INSERT INTO positions (user_id, symbol, side, entry_price, size, margin, leverage, entry_fee, capital_before) 
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
                             [userId, symbol, side, entryPrice, size, margin, account.leverage, entryFee, margin], function(err) {
+                        openingUsers.delete(userId);
                         if (err) {
                             if (cb) cb(false);
                             return;
@@ -567,6 +604,9 @@ function checkAutoTradeSignals(symbol, currentPrice) {
         if (err || !accounts || accounts.length === 0) return;
 
         accounts.forEach(account => {
+            // Only process signals for the symbol that the user has configured
+            if (account.symbol && account.symbol !== symbol) return;
+
             const userId = account.user_id;
             const n1 = account.wt_n1;
             const n2 = account.wt_n2;
@@ -597,10 +637,17 @@ function checkAutoTradeSignals(symbol, currentPrice) {
                     if (err) return;
                     
                     if (pos) {
+                        // Check if the open position's symbol matches the signal symbol.
+                        // If they don't match, we must ignore the signal since the user already has a position on another symbol.
+                        if (pos.symbol !== symbol) {
+                            console.log(`[AutoTrade] User ${account.username} already has an active position on ${pos.symbol}. Skipping signal on ${symbol}.`);
+                            return;
+                        }
+                        
                         if (pos.side === signal) {
-                            console.log(`[AutoTrade] User ${account.username} already has a ${signal} position. Skipping.`);
+                            console.log(`[AutoTrade] User ${account.username} already has a ${signal} position on ${symbol}. Skipping.`);
                         } else {
-                            console.log(`[AutoTrade] Opposite signal ${signal} detected. Closing current ${pos.side} position for ${account.username}`);
+                            console.log(`[AutoTrade] Opposite signal ${signal} detected. Closing current ${pos.side} position on ${symbol} for ${account.username}`);
                             closePosition(userId, currentPrice, null, (success) => {
                                 if (success) {
                                     setTimeout(() => {
@@ -660,7 +707,7 @@ function setupBinanceStream() {
                         history[lastIdx] = tick;
                     } else {
                         history.push(tick);
-                        if (history.length > 300) {
+                        if (history.length > 1000) {
                             history.shift();
                         }
                     }
