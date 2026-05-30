@@ -70,6 +70,7 @@ db.serialize(() => {
         entry_fee REAL NOT NULL,
         capital_before REAL NOT NULL,
         entry_time DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        entry_type TEXT NOT NULL DEFAULT 'MANUAL',
         FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
 
@@ -98,6 +99,8 @@ db.serialize(() => {
     db.run(`ALTER TABLE accounts ADD COLUMN wt_sig INTEGER NOT NULL DEFAULT 4`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN wt_ob INTEGER NOT NULL DEFAULT 53`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN symbol TEXT NOT NULL DEFAULT 'BTCUSDT'`, (err) => {});
+    db.run(`ALTER TABLE positions ADD COLUMN entry_type TEXT NOT NULL DEFAULT 'MANUAL'`, (err) => {});
+    db.run(`ALTER TABLE trade_history ADD COLUMN entry_type TEXT NOT NULL DEFAULT 'MANUAL'`, (err) => {});
 });
 
 // Auth Middleware
@@ -249,8 +252,8 @@ app.post(`${BASE_PATH}/api/trade/open`, authenticateToken, (req, res) => {
                 const newCapital = margin - entryFee;
 
                 db.run(`UPDATE accounts SET virtual_capital = ? WHERE user_id = ?`, [newCapital, userId], (err) => {
-                    db.run(`INSERT INTO positions (user_id, symbol, side, entry_price, size, margin, leverage, entry_fee, capital_before) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+                    db.run(`INSERT INTO positions (user_id, symbol, side, entry_price, size, margin, leverage, entry_fee, capital_before, entry_type) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL')`, 
                             [userId, symbol, side, entryPrice, size, margin, account.leverage, entryFee, margin], function(err) {
                         res.json({ message: "Position opened", newCapital });
                     });
@@ -345,9 +348,9 @@ function closePosition(userId, specificPrice, res = null, cb = null) {
 
         db.serialize(() => {
             db.run(`UPDATE accounts SET virtual_capital = ? WHERE user_id = ?`, [newVirtualCapital, userId]);
-            db.run(`INSERT INTO trade_history (user_id, symbol, side, entry_time, entry_price, exit_price, pnl, roe, fee, capital_before, capital_after, leverage)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [userId, pos.symbol, pos.side, pos.entry_time, pos.entry_price, closePrice, pnl, roe, totalFee, pos.capital_before, newVirtualCapital, pos.leverage]);
+            db.run(`INSERT INTO trade_history (user_id, symbol, side, entry_time, entry_price, exit_price, pnl, roe, fee, capital_before, capital_after, leverage, entry_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [userId, pos.symbol, pos.side, pos.entry_time, pos.entry_price, closePrice, pnl, roe, totalFee, pos.capital_before, newVirtualCapital, pos.leverage, pos.entry_type || 'MANUAL']);
             db.run(`DELETE FROM positions WHERE user_id = ?`, [userId], () => {
                 closingUsers.delete(userId);
                 const result = { pnl, roe, totalFee, newCapital: newVirtualCapital, closePrice };
@@ -575,8 +578,8 @@ function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
                         if (cb) cb(false);
                         return;
                     }
-                    db.run(`INSERT INTO positions (user_id, symbol, side, entry_price, size, margin, leverage, entry_fee, capital_before) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+                    db.run(`INSERT INTO positions (user_id, symbol, side, entry_price, size, margin, leverage, entry_fee, capital_before, entry_type) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'AUTO')`, 
                             [userId, symbol, side, entryPrice, size, margin, account.leverage, entryFee, margin], function(err) {
                         openingUsers.delete(userId);
                         if (err) {
@@ -587,7 +590,7 @@ function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
                         console.log(`[AutoTrade] Position opened successfully for user ${userId}. Symbol: ${symbol}, Side: ${side}, Price: ${entryPrice}`);
                         
                         // Notify client to update UI
-                        notifyUser(userId, { type: 'position_opened', data: { symbol, side, entryPrice, size, margin, leverage: account.leverage, newCapital } });
+                        notifyUser(userId, { type: 'position_opened', data: { symbol, side, entry_price: entryPrice, size, margin, leverage: account.leverage, newCapital, entry_time: new Date().toISOString(), entry_type: 'AUTO' } });
                         if (cb) cb(true);
                     });
                 });
