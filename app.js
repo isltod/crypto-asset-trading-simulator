@@ -13,7 +13,10 @@ const btnLong = document.getElementById('btn-long');
 const btnShort = document.getElementById('btn-short');
 const btnClose = document.getElementById('btn-close');
 const activePosInfo = document.getElementById('active-position-info');
+const posSymbolEl = document.getElementById('pos-symbol');
 const posSideEl = document.getElementById('pos-side');
+const posEntryTypeEl = document.getElementById('pos-entry-type');
+const posEntryTimeEl = document.getElementById('pos-entry-time');
 const posEntryEl = document.getElementById('pos-entry');
 const posMarginEl = document.getElementById('pos-margin');
 const posSizeEl = document.getElementById('pos-size');
@@ -1113,7 +1116,7 @@ function connectWebSocket(symbol) {
 
         // Backend Event: Position Closed (TPSL, Liquidation, or Auto Trade reversal)
         if (message.type === 'position_closed') {
-            alert(`[Position Closed] PnL: ${message.data.pnl.toFixed(2)} USDT (${message.data.roe.toFixed(2)}%)`);
+            console.log(`[Position Closed] PnL: ${message.data.pnl.toFixed(2)} USDT (${message.data.roe.toFixed(2)}%)`);
             activePosition = null;
             activePosInfo.classList.add('hidden');
             fetchAccountData();
@@ -1160,15 +1163,48 @@ async function closeActiveTrade() {
     } catch(e) {}
 }
 
+function formatEntryTime(timeStr) {
+    if (!timeStr) return '-';
+    try {
+        const date = new Date(timeStr);
+        if (isNaN(date.getTime())) {
+            const cleanStr = timeStr.replace(' ', 'T');
+            const fallbackDate = new Date(cleanStr);
+            if (!isNaN(fallbackDate.getTime())) {
+                return fallbackDate.toLocaleString();
+            }
+            return timeStr;
+        }
+        return date.toLocaleString();
+    } catch (e) {
+        return timeStr;
+    }
+}
+
 function renderActivePosition() {
     btnLong.disabled = true;
     btnShort.disabled = true;
     activePosInfo.classList.remove('hidden');
+    if (posSymbolEl) {
+        posSymbolEl.textContent = activePosition.symbol || '';
+    }
+    if (posEntryTimeEl) {
+        posEntryTimeEl.textContent = formatEntryTime(activePosition.entry_time || activePosition.entryTime);
+    }
     posSideEl.textContent = activePosition.side;
     posSideEl.style.color = activePosition.side === 'LONG' ? 'var(--up-color)' : 'var(--down-color)';
-    posEntryEl.textContent = activePosition.entry_price.toFixed(2);
-    posMarginEl.textContent = activePosition.margin.toFixed(2) + " USDT";
-    posSizeEl.textContent = activePosition.size.toFixed(4);
+    if (posEntryTypeEl) {
+        const type = activePosition.entry_type || activePosition.entryType || 'MANUAL';
+        posEntryTypeEl.textContent = type === 'AUTO' ? 'Auto (🤖)' : 'Manual (👤)';
+        posEntryTypeEl.style.color = type === 'AUTO' ? 'var(--accent-color)' : 'var(--text-secondary)';
+    }
+    
+    // Support both entry_price and entryPrice properties for consistency between DB and WebSocket events
+    const entryPrice = activePosition.entry_price !== undefined ? activePosition.entry_price : activePosition.entryPrice;
+    posEntryEl.textContent = entryPrice ? entryPrice.toFixed(2) : '-';
+    
+    posMarginEl.textContent = activePosition.margin ? activePosition.margin.toFixed(2) + " USDT" : '-';
+    posSizeEl.textContent = activePosition.size ? activePosition.size.toFixed(4) : '-';
     updateVisualPnL(lastClose);
 }
 
