@@ -88,6 +88,11 @@ let WT_SIG_LEN = 4;
 let WT_OB_LEVEL = 53;
 let wtPriceLines = [];
 
+// Supertrend State & Constants
+let supertrendSeriesList = [];
+let supertrendPeriod = 10;
+let supertrendMultiplier = 3.0;
+
 // Helper functions for indicators
 function calculateEMA(values, period) {
     const ema = new Array(values.length).fill(0);
@@ -222,6 +227,158 @@ function applyWTMarkers() {
 
     candleSeries.setMarkers(markers);
     wt1Series.setMarkers(wtMarkers);
+}
+
+function calculateSupertrend(formattedData, period = 10, multiplier = 3.0) {
+    const len = formattedData.length;
+    if (len < period) return [];
+
+    // Calculate TR
+    const tr = new Array(len);
+    tr[0] = formattedData[0].high - formattedData[0].low;
+    for (let i = 1; i < len; i++) {
+        tr[i] = Math.max(
+            formattedData[i].high - formattedData[i].low,
+            Math.abs(formattedData[i].high - formattedData[i - 1].close),
+            Math.abs(formattedData[i].low - formattedData[i - 1].close)
+        );
+    }
+
+    // Calculate ATR (Wilder's MA / RMA of TR)
+    const atr = new Array(len).fill(0);
+    let sum = 0;
+    for (let i = 0; i < period; i++) {
+        sum += tr[i];
+    }
+    atr[period - 1] = sum / period;
+    for (let i = period; i < len; i++) {
+        atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period;
+    }
+
+    // Supertrend Calculation
+    const basicUpperBand = new Array(len);
+    const basicLowerBand = new Array(len);
+    const finalUpperBand = new Array(len).fill(0);
+    const finalLowerBand = new Array(len).fill(0);
+    const trend = new Array(len).fill(1); // 1 = Long, -1 = Short
+
+    for (let i = 0; i < len; i++) {
+        const hl2 = (formattedData[i].high + formattedData[i].low) / 2;
+        basicUpperBand[i] = hl2 + multiplier * atr[i];
+        basicLowerBand[i] = hl2 - multiplier * atr[i];
+    }
+
+    finalUpperBand[0] = basicUpperBand[0];
+    finalLowerBand[0] = basicLowerBand[0];
+
+    for (let i = 1; i < len; i++) {
+        // final upper band
+        if (basicUpperBand[i] < finalUpperBand[i - 1] || formattedData[i - 1].close > finalUpperBand[i - 1]) {
+            finalUpperBand[i] = basicUpperBand[i];
+        } else {
+            finalUpperBand[i] = finalUpperBand[i - 1];
+        }
+
+        // final lower band
+        if (basicLowerBand[i] > finalLowerBand[i - 1] || formattedData[i - 1].close < finalLowerBand[i - 1]) {
+            finalLowerBand[i] = basicLowerBand[i];
+        } else {
+            finalLowerBand[i] = finalLowerBand[i - 1];
+        }
+
+        // Trend
+        if (formattedData[i].close > finalUpperBand[i - 1]) {
+            trend[i] = 1;
+        } else if (formattedData[i].close < finalLowerBand[i - 1]) {
+            trend[i] = -1;
+        } else {
+            trend[i] = trend[i - 1];
+        }
+    }
+
+    const results = [];
+    const startIdx = period - 1;
+    for (let i = 0; i < len; i++) {
+        const t = formattedData[i].time;
+        if (i < startIdx) {
+            results.push({ time: t, value: null, trend: 1 });
+        } else {
+            results.push({
+                time: t,
+                value: trend[i] === 1 ? finalLowerBand[i] : finalUpperBand[i],
+                trend: trend[i]
+            });
+        }
+    }
+
+    return results;
+}
+
+function renderSupertrend() {
+    // 1. Remove all existing temporary Supertrend series
+    supertrendSeriesList.forEach(series => {
+        try {
+            chart.removeSeries(series);
+        } catch (e) {}
+    });
+    supertrendSeriesList = [];
+
+    const toggleSupertrend = document.getElementById('toggle-supertrend');
+    const isVisible = toggleSupertrend ? toggleSupertrend.checked : false;
+    if (!isVisible) return;
+
+    const data = window.klineData;
+    if (!data || data.length === 0) return;
+
+    const results = calculateSupertrend(data, supertrendPeriod, supertrendMultiplier);
+    if (results.length === 0) return;
+
+    // 2. Extract consecutive long/short segments
+    const segments = [];
+    let currentSegment = null;
+
+    for (let i = 0; i < results.length; i++) {
+        const item = results[i];
+        if (item.value === null) {
+            if (currentSegment) {
+                segments.push(currentSegment);
+                currentSegment = null;
+            }
+            continue;
+        }
+
+        if (!currentSegment) {
+            currentSegment = {
+                trend: item.trend,
+                data: [{ time: item.time, value: item.value }]
+            };
+        } else if (currentSegment.trend === item.trend) {
+            currentSegment.data.push({ time: item.time, value: item.value });
+        } else {
+            // Trend flipped -> push segment and start a new one
+            segments.push(currentSegment);
+            currentSegment = {
+                trend: item.trend,
+                data: [{ time: item.time, value: item.value }]
+            };
+        }
+    }
+    if (currentSegment) {
+        segments.push(currentSegment);
+    }
+
+    // 3. Render each segment as a separate Line Series
+    segments.forEach(seg => {
+        const series = chart.addLineSeries({
+            color: seg.trend === 1 ? '#2ebd85' : '#f6465d',
+            lineWidth: 2,
+            crosshairMarkerVisible: false,
+            lastValueVisible: false,
+            priceLineVisible: false
+        });
+        series.setData(seg.data);
+        supertrendSeriesList.push(series);
+    });
 }
 
 function updateWTPriceLines() {
@@ -636,6 +793,51 @@ async function init() {
     bindWTParamInput('wt-sig', 1);
     bindWTParamInput('wt-ob', 1);
 
+    // Supertrend Binding Logic
+    const toggleSupertrend = document.getElementById('toggle-supertrend');
+    const supertrendParamsContainer = document.getElementById('supertrend-params-container');
+
+    const updateSupertrendVisibility = () => {
+        if (!toggleSupertrend) return;
+        const isVisible = toggleSupertrend.checked;
+        if (isVisible) {
+            supertrendParamsContainer?.classList.remove('hidden');
+        } else {
+            supertrendParamsContainer?.classList.add('hidden');
+        }
+        if (window.klineData) {
+            renderSupertrend();
+        }
+        saveUIConfig();
+    };
+
+    if (toggleSupertrend) {
+        toggleSupertrend.addEventListener('change', updateSupertrendVisibility);
+    }
+
+    const stPeriodEl = document.getElementById('supertrend-period');
+    const stMultEl = document.getElementById('supertrend-multiplier');
+
+    const onSupertrendParamChange = () => {
+        if (!stPeriodEl || !stMultEl) return;
+        let pVal = parseInt(stPeriodEl.value, 10);
+        let mVal = parseFloat(stMultEl.value);
+        if (isNaN(pVal) || pVal < 1) pVal = 10;
+        if (isNaN(mVal) || mVal <= 0) mVal = 3.0;
+        
+        stPeriodEl.value = pVal;
+        stMultEl.value = mVal;
+        
+        supertrendPeriod = pVal;
+        supertrendMultiplier = mVal;
+        
+        if (window.klineData) updateChartSeries();
+        saveUIConfig();
+    };
+
+    if (stPeriodEl) stPeriodEl.addEventListener('change', onSupertrendParamChange);
+    if (stMultEl) stMultEl.addEventListener('change', onSupertrendParamChange);
+
     // Resizer Dragging Logic
     let isResizing = false;
     let startY = 0;
@@ -781,6 +983,9 @@ async function init() {
     wtResizeObserver.observe(wtContainer);
 
     updateWTVisibility();
+    if (typeof updateSupertrendVisibility === 'function') {
+        updateSupertrendVisibility();
+    }
 }
 
 async function updateBackendStatus() {
@@ -866,6 +1071,8 @@ function initChart() {
     bbUpperSeries = chart.addLineSeries({ color: 'rgba(56, 189, 248, 0.5)', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-bb').checked });
     bbMiddleSeries = chart.addLineSeries({ color: 'rgba(56, 189, 248, 0.5)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-bb').checked });
     bbLowerSeries = chart.addLineSeries({ color: 'rgba(56, 189, 248, 0.5)', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-bb').checked });
+
+
 
     // Initialize WaveTrend Chart
     const wtChartContainer = document.getElementById('wt-chart-container');
@@ -1029,6 +1236,9 @@ function updateChartSeries() {
     wt1Series.setData(wtData.wt1Data);
     wt2Series.setData(wtData.wt2Data);
     applyWTMarkers();
+
+    // Set Supertrend Data
+    renderSupertrend();
 }
 
 function updateIndicators() {
@@ -1064,6 +1274,9 @@ function updateIndicators() {
         wt2Series.update(wtData.wt2Data[wtData.wt2Data.length - 1]);
     }
     applyWTMarkers();
+
+    // Update Supertrend
+    renderSupertrend();
 }
 
 function connectWebSocket(symbol) {
@@ -1263,7 +1476,10 @@ function saveUIConfig() {
         wtN1: parseInt(document.getElementById('wt-n1')?.value || '10', 10),
         wtN2: parseInt(document.getElementById('wt-n2')?.value || '21', 10),
         wtSig: parseInt(document.getElementById('wt-sig')?.value || '4', 10),
-        wtOb: parseInt(document.getElementById('wt-ob')?.value || '53', 10)
+        wtOb: parseInt(document.getElementById('wt-ob')?.value || '53', 10),
+        showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
+        supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
+        supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0')
     };
     localStorage.setItem('cats_ui_config', JSON.stringify(uiConfig));
 }
@@ -1302,6 +1518,17 @@ function loadUIConfig() {
             if (config.wtOb && document.getElementById('wt-ob')) {
                 document.getElementById('wt-ob').value = config.wtOb;
                 WT_OB_LEVEL = config.wtOb;
+            }
+            if (typeof config.showSupertrend === 'boolean' && document.getElementById('toggle-supertrend')) {
+                document.getElementById('toggle-supertrend').checked = config.showSupertrend;
+            }
+            if (config.supertrendPeriod && document.getElementById('supertrend-period')) {
+                document.getElementById('supertrend-period').value = config.supertrendPeriod;
+                supertrendPeriod = config.supertrendPeriod;
+            }
+            if (config.supertrendMultiplier && document.getElementById('supertrend-multiplier')) {
+                document.getElementById('supertrend-multiplier').value = config.supertrendMultiplier;
+                supertrendMultiplier = config.supertrendMultiplier;
             }
         }
     } catch(e) {}
