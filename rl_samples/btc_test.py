@@ -22,16 +22,22 @@ def clean_btc_csv(csv):
 
 
 if __name__ == "__main__":
-    btc_csvs = {"1h": "btc_usdt_1h_cache.csv", "1m": "btc_usdt_1m_cache.csv"}
+    btc_csvs = {
+        "1h": "rl_samples/btc_usdt_1h_cache.csv",
+        "1m": "rl_samples/btc_usdt_1m_cache.csv",
+    }
 
     symbol = "close"
     # 이것도 Market 클래스 내부의 로직과 하드코딩으로 연결되어 있어서, 바꾸려면 같이 수정해야 함...
     features = [symbol, "r", "s", "m", "v"]
 
     # 우선 1시간 봉으로 해보자...
-    csv = btc_csvs["1m"]
-    episodes = 60
-    model_path = "public_models/btc_1m"
+    # csv = btc_csvs["1m"]
+    csv = btc_csvs["1h"]
+    # episodes = 60
+    episodes = 6
+    # model_path = "rl_samples/models/btc_1m"
+    model_path = "rl_samples/models/btc_1h"
 
     # 비율은 a는 시작 절대비율, b는 a와 더했을 때 비율, c는 추가할 절대 비율로...
     a = 0.0
@@ -158,8 +164,8 @@ if __name__ == "__main__":
     tb.backtest_strategy(sl=None, tsl=None, tp=None, wait=5)
 
     # # 일단 기본 전략에서 그림 좀 보자..
-    # ax = tb.net_wealths.plot(figsize=(10, 6))
-    # plt.show()
+    ax = tb.net_wealths.plot(figsize=(10, 6))
+    plt.show()
 
     # 이거 할 때 ATR 봐야 된다는데...
     # 손절만 추가한 백테스팅 - 종가 손절

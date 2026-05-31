@@ -93,6 +93,16 @@ let supertrendSeriesList = [];
 let supertrendPeriod = 10;
 let supertrendMultiplier = 3.0;
 
+// MACD State & Constants
+let macdChart = null;
+let macdLineSeries = null;
+let macdSigSeries = null;
+let macdHistSeries = null;
+let MACD_TF = '5m';
+let MACD_FAST = 12;
+let MACD_SLOW = 26;
+let MACD_SIG = 9;
+
 // Helper functions for indicators
 function calculateEMA(values, period) {
     const ema = new Array(values.length).fill(0);
@@ -155,78 +165,241 @@ function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN,
     return { wt1Data, wt2Data };
 }
 
-function applyWTMarkers() {
-    const toggleWT = document.getElementById('toggle-wt');
-    if (!toggleWT || !candleSeries || !wt1Series) return;
-
-    if (!toggleWT.checked) {
-        candleSeries.setMarkers([]);
-        wt1Series.setMarkers([]);
-        return;
+function aggregateKlines(history, timeframe) {
+    const tfMap = {
+        '1m': 60,
+        '3m': 180,
+        '5m': 300,
+        '15m': 900,
+        '30m': 1800,
+        '1h': 3600,
+        '4h': 14400,
+        '1d': 86400
+    };
+    const interval = tfMap[timeframe] || 60;
+    const grouped = {};
+    for (const tick of history) {
+        const key = Math.floor(tick.time / interval) * interval;
+        if (!grouped[key]) {
+            grouped[key] = [];
+        }
+        grouped[key].push(tick);
     }
+    const aggregated = [];
+    const keys = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+    for (const key of keys) {
+        const group = grouped[key];
+        const open = group[0].open;
+        const close = group[group.length - 1].close;
+        let high = -Infinity;
+        let low = Infinity;
+        for (const tick of group) {
+            if (tick.high > high) high = tick.high;
+            if (tick.low < low) low = tick.low;
+        }
+        aggregated.push({
+            time: key,
+            open,
+            high,
+            low,
+            close
+        });
+    }
+    return aggregated;
+}
+
+function calculateMACDForKlines(klines, fast, slow, sig) {
+    const closes = klines.map(k => k.close);
+    const len = closes.length;
+    const macdLine = new Array(len).fill(0);
+    const signalLine = new Array(len).fill(0);
+    const hist = new Array(len).fill(0);
+    if (len < slow + sig) {
+        return { macdLine, signalLine, hist };
+    }
+    const emaFast = calculateEMA(closes, fast);
+    const emaSlow = calculateEMA(closes, slow);
+    for (let i = 0; i < len; i++) {
+        macdLine[i] = emaFast[i] - emaSlow[i];
+    }
+    const macdSlice = macdLine.slice(slow - 1);
+    const emaSigSlice = calculateEMA(macdSlice, sig);
+    for (let i = 0; i < len; i++) {
+        if (i < slow - 1) {
+            signalLine[i] = 0;
+            hist[i] = 0;
+        } else {
+            signalLine[i] = emaSigSlice[i - (slow - 1)];
+            hist[i] = macdLine[i] - signalLine[i];
+        }
+    }
+    return { macdLine, signalLine, hist };
+}
+
+function calculateMTFMacd(formattedData, tf = MACD_TF, fast = MACD_FAST, slow = MACD_SLOW, sig = MACD_SIG) {
+    const aggregated = aggregateKlines(formattedData, tf);
+    const macdResult = calculateMACDForKlines(aggregated, fast, slow, sig);
+    
+    const macdData = [];
+    const sigData = [];
+    const histData = [];
+    
+    let aggIdx = 0;
+    for (let i = 0; i < formattedData.length; i++) {
+        const t = formattedData[i].time;
+        while (aggIdx + 1 < aggregated.length && aggregated[aggIdx + 1].time <= t) {
+            aggIdx++;
+        }
+        
+        const currentAgg = aggregated[aggIdx];
+        if (currentAgg && t >= currentAgg.time) {
+            const mVal = macdResult.macdLine[aggIdx];
+            const sVal = macdResult.signalLine[aggIdx];
+            const hVal = macdResult.hist[aggIdx];
+            
+            let color = '#26a69a'; // green
+            if (hVal < 0) color = '#ef5350'; // red
+            
+            macdData.push({ time: t, value: mVal });
+            sigData.push({ time: t, value: sVal });
+            histData.push({ time: t, value: hVal, color: color });
+        } else {
+            macdData.push({ time: t });
+            sigData.push({ time: t });
+            histData.push({ time: t });
+        }
+    }
+    
+    return { macdData, sigData, histData };
+}
+
+function applyIndicatorMarkers() {
+    const toggleWT = document.getElementById('toggle-wt');
+    const toggleMACD = document.getElementById('toggle-macd');
+    if (!candleSeries) return;
 
     const formattedData = window.klineData;
-    const wtData = window.lastWtData;
-    if (!formattedData || !wtData || !wtData.wt1Data || !wtData.wt2Data) return;
+    if (!formattedData || formattedData.length === 0) return;
 
     const markers = [];
-    const wtMarkers = [];
     const len = formattedData.length;
 
-    for (let i = 1; i < len; i++) {
-        const prevWt1 = wtData.wt1Data[i - 1].value;
-        const prevWt2 = wtData.wt2Data[i - 1].value;
-        const currWt1 = wtData.wt1Data[i].value;
-        const currWt2 = wtData.wt2Data[i].value;
+    // 1. WaveTrend Markers
+    if (toggleWT && toggleWT.checked && window.lastWtData && window.lastWtData.wt1Data && window.lastWtData.wt2Data) {
+        const wtData = window.lastWtData;
+        const wtMarkers = [];
+        for (let i = 1; i < len; i++) {
+            const prevWt1 = wtData.wt1Data[i - 1].value;
+            const prevWt2 = wtData.wt2Data[i - 1].value;
+            const currWt1 = wtData.wt1Data[i].value;
+            const currWt2 = wtData.wt2Data[i].value;
 
-        if (prevWt1 === undefined || prevWt2 === undefined || currWt1 === undefined || currWt2 === undefined) {
-            continue;
-        }
+            if (prevWt1 === undefined || prevWt2 === undefined || currWt1 === undefined || currWt2 === undefined) {
+                continue;
+            }
 
-        const time = formattedData[i].time;
+            const time = formattedData[i].time;
 
-        // Long Signal: wt1 crosses above wt2 and wt1 < -WT_OB_LEVEL
-        if (prevWt1 < prevWt2 && currWt1 > currWt2 && currWt1 < -WT_OB_LEVEL) {
-            markers.push({
-                time: time,
-                position: 'belowBar',
-                color: '#2ebd85',
-                shape: 'arrowUp',
-                text: 'LONG',
-                size: 1
-            });
-            wtMarkers.push({
-                time: time,
-                position: 'belowBar',
-                color: '#2ebd85',
-                shape: 'circle',
-                text: 'L',
-                size: 1
-            });
+            if (prevWt1 < prevWt2 && currWt1 > currWt2 && currWt1 < -WT_OB_LEVEL) {
+                markers.push({
+                    time: time,
+                    position: 'belowBar',
+                    color: '#2ebd85',
+                    shape: 'arrowUp',
+                    text: 'LONG',
+                    size: 1
+                });
+                wtMarkers.push({
+                    time: time,
+                    position: 'belowBar',
+                    color: '#2ebd85',
+                    shape: 'circle',
+                    text: 'L',
+                    size: 1
+                });
+            } else if (prevWt1 > prevWt2 && currWt1 < currWt2 && currWt1 > WT_OB_LEVEL) {
+                markers.push({
+                    time: time,
+                    position: 'aboveBar',
+                    color: '#f6465d',
+                    shape: 'arrowDown',
+                    text: 'SHORT',
+                    size: 1
+                });
+                wtMarkers.push({
+                    time: time,
+                    position: 'aboveBar',
+                    color: '#f6465d',
+                    shape: 'circle',
+                    text: 'S',
+                    size: 1
+                });
+            }
         }
-        // Short Signal: wt1 crosses below wt2 and wt1 > WT_OB_LEVEL
-        else if (prevWt1 > prevWt2 && currWt1 < currWt2 && currWt1 > WT_OB_LEVEL) {
-            markers.push({
-                time: time,
-                position: 'aboveBar',
-                color: '#f6465d',
-                shape: 'arrowDown',
-                text: 'SHORT',
-                size: 1
-            });
-            wtMarkers.push({
-                time: time,
-                position: 'aboveBar',
-                color: '#f6465d',
-                shape: 'circle',
-                text: 'S',
-                size: 1
-            });
-        }
+        if (wt1Series) wt1Series.setMarkers(wtMarkers);
+    } else {
+        if (wt1Series) wt1Series.setMarkers([]);
     }
 
+    // 2. MACD Markers
+    if (toggleMACD && toggleMACD.checked && window.lastMacdData && window.lastMacdData.macdData && window.lastMacdData.sigData) {
+        const macdData = window.lastMacdData;
+        const macdMarkers = [];
+        for (let i = 1; i < len; i++) {
+            const prevM = macdData.macdData[i - 1].value;
+            const prevS = macdData.sigData[i - 1].value;
+            const currM = macdData.macdData[i].value;
+            const currS = macdData.sigData[i].value;
+
+            if (prevM === undefined || prevS === undefined || currM === undefined || currS === undefined) {
+                continue;
+            }
+
+            const time = formattedData[i].time;
+
+            if (prevM < prevS && currM > currS) {
+                markers.push({
+                    time: time,
+                    position: 'belowBar',
+                    color: '#38bdf8',
+                    shape: 'arrowUp',
+                    text: 'MACD LONG',
+                    size: 1
+                });
+                macdMarkers.push({
+                    time: time,
+                    position: 'belowBar',
+                    color: '#38bdf8',
+                    shape: 'circle',
+                    text: 'L',
+                    size: 1
+                });
+            } else if (prevM > prevS && currM < currS) {
+                markers.push({
+                    time: time,
+                    position: 'aboveBar',
+                    color: '#fb923c',
+                    shape: 'arrowDown',
+                    text: 'MACD SHORT',
+                    size: 1
+                });
+                macdMarkers.push({
+                    time: time,
+                    position: 'aboveBar',
+                    color: '#fb923c',
+                    shape: 'circle',
+                    text: 'S',
+                    size: 1
+                });
+            }
+        }
+        if (macdLineSeries) macdLineSeries.setMarkers(macdMarkers);
+    } else {
+        if (macdLineSeries) macdLineSeries.setMarkers([]);
+    }
+
+    markers.sort((a, b) => a.time - b.time);
     candleSeries.setMarkers(markers);
-    wt1Series.setMarkers(wtMarkers);
 }
 
 function calculateSupertrend(formattedData, period = 10, multiplier = 3.0) {
@@ -530,6 +703,20 @@ async function fetchAccountData() {
         autoTradeEnabled = acc.auto_trade_enabled === 1;
         signalType = acc.signal_type || 'none';
         
+        MACD_TF = acc.macd_tf || '5m';
+        MACD_FAST = acc.macd_fast || 12;
+        MACD_SLOW = acc.macd_slow || 26;
+        MACD_SIG = acc.macd_sig || 9;
+
+        const macdTfInput = document.getElementById('macd-tf');
+        if (macdTfInput) macdTfInput.value = MACD_TF;
+        const macdFastInput = document.getElementById('macd-fast');
+        if (macdFastInput) macdFastInput.value = MACD_FAST;
+        const macdSlowInput = document.getElementById('macd-slow');
+        if (macdSlowInput) macdSlowInput.value = MACD_SLOW;
+        const macdSigInput = document.getElementById('macd-sig');
+        if (macdSigInput) macdSigInput.value = MACD_SIG;
+
         document.getElementById('capital-input').value = virtualCapital.toFixed(2);
         document.getElementById('leverage-input').value = leverage;
         document.getElementById('toggle-tpsl').checked = tpslEnabled;
@@ -585,6 +772,11 @@ async function updateConfig() {
     const wtN2 = parseInt(document.getElementById('wt-n2')?.value || WT_AVG_LEN, 10);
     const wtSig = parseInt(document.getElementById('wt-sig')?.value || WT_SIG_LEN, 10);
     const wtOb = parseInt(document.getElementById('wt-ob')?.value || WT_OB_LEVEL, 10);
+
+    const macdTf = document.getElementById('macd-tf')?.value || MACD_TF;
+    const macdFast = parseInt(document.getElementById('macd-fast')?.value || MACD_FAST, 10);
+    const macdSlow = parseInt(document.getElementById('macd-slow')?.value || MACD_SLOW, 10);
+    const macdSig = parseInt(document.getElementById('macd-sig')?.value || MACD_SIG, 10);
     
     try {
         await apiCall('/account/config', 'POST', {
@@ -598,6 +790,10 @@ async function updateConfig() {
             wt_n2: wtN2,
             wt_sig: wtSig,
             wt_ob: wtOb,
+            macd_tf: macdTf,
+            macd_fast: macdFast,
+            macd_slow: macdSlow,
+            macd_sig: macdSig,
             symbol: currentSymbol
         });
         autoTradeEnabled = toggleAutoTrade ? toggleAutoTrade.checked : false;
@@ -760,9 +956,30 @@ async function init() {
             wtParamsContainer?.classList.add('hidden');
         }
         saveUIConfig();
-        applyWTMarkers();
+        applyIndicatorMarkers();
     };
     toggleWT.addEventListener('change', updateWTVisibility);
+
+    const toggleMACD = document.getElementById('toggle-macd');
+    const macdContainer = document.getElementById('macd-chart-container');
+    const resizerMacd = document.getElementById('chart-resizer-macd');
+    const macdParamsContainer = document.getElementById('macd-params-container');
+
+    const updateMACDVisibility = () => {
+        const isVisible = toggleMACD.checked;
+        if (isVisible) {
+            macdContainer.classList.remove('hidden');
+            resizerMacd.classList.remove('hidden');
+            macdParamsContainer?.classList.remove('hidden');
+        } else {
+            macdContainer.classList.add('hidden');
+            resizerMacd.classList.add('hidden');
+            macdParamsContainer?.classList.add('hidden');
+        }
+        saveUIConfig();
+        applyIndicatorMarkers();
+    };
+    toggleMACD.addEventListener('change', updateMACDVisibility);
 
     // WaveTrend Parameter Inputs Event Listeners
     const bindWTParamInput = (id, minVal) => {
@@ -792,6 +1009,44 @@ async function init() {
     bindWTParamInput('wt-n2', 1);
     bindWTParamInput('wt-sig', 1);
     bindWTParamInput('wt-ob', 1);
+
+    // MACD Parameter Inputs Event Listeners
+    const bindMACDParamInput = (id) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.addEventListener('change', async (e) => {
+            let val = parseInt(e.target.value, 10);
+            if (isNaN(val) || val < 1) val = 1;
+            e.target.value = val;
+            
+            if (id === 'macd-fast') MACD_FAST = val;
+            else if (id === 'macd-slow') MACD_SLOW = val;
+            else if (id === 'macd-sig') MACD_SIG = val;
+
+            if (window.klineData) updateChartSeries();
+            saveUIConfig();
+            
+            if (authToken) {
+                await updateConfig();
+            }
+        });
+    };
+
+    bindMACDParamInput('macd-fast');
+    bindMACDParamInput('macd-slow');
+    bindMACDParamInput('macd-sig');
+
+    const macdTfInput = document.getElementById('macd-tf');
+    if (macdTfInput) {
+        macdTfInput.addEventListener('change', async (e) => {
+            MACD_TF = e.target.value;
+            if (window.klineData) updateChartSeries();
+            saveUIConfig();
+            if (authToken) {
+                await updateConfig();
+            }
+        });
+    }
 
     // Supertrend Binding Logic
     const toggleSupertrend = document.getElementById('toggle-supertrend');
@@ -839,47 +1094,66 @@ async function init() {
     if (stMultEl) stMultEl.addEventListener('change', onSupertrendParamChange);
 
     // Resizer Dragging Logic
+    let activeResizer = null;
     let isResizing = false;
     let startY = 0;
     let startHeight = 0;
 
-    const startResize = (clientY) => {
+    const startResize = (clientY, resizerEl, containerEl) => {
         isResizing = true;
+        activeResizer = { element: resizerEl, container: containerEl };
         startY = clientY;
-        startHeight = wtContainer.clientHeight;
+        startHeight = containerEl.clientHeight;
         document.body.style.cursor = 'row-resize';
-        resizer.classList.add('resizing');
+        resizerEl.classList.add('resizing');
     };
 
     const doResize = (clientY) => {
-        if (!isResizing) return;
+        if (!isResizing || !activeResizer) return;
         const dy = clientY - startY;
         let newHeight = startHeight - dy;
         if (newHeight < 60) newHeight = 60;
         if (newHeight > 500) newHeight = 500;
-        wtContainer.style.height = `${newHeight}px`;
+        activeResizer.container.style.height = `${newHeight}px`;
     };
 
     const stopResize = () => {
         if (isResizing) {
             isResizing = false;
+            if (activeResizer) {
+                activeResizer.element.classList.remove('resizing');
+            }
+            activeResizer = null;
             document.body.style.cursor = '';
-            resizer.classList.remove('resizing');
             saveUIConfig();
         }
     };
 
     resizer.addEventListener('mousedown', (e) => {
-        startResize(e.clientY);
+        startResize(e.clientY, resizer, wtContainer);
         e.preventDefault();
     });
 
     resizer.addEventListener('touchstart', (e) => {
         if (e.touches.length > 0) {
-            startResize(e.touches[0].clientY);
+            startResize(e.touches[0].clientY, resizer, wtContainer);
             e.preventDefault();
         }
     }, { passive: false });
+
+    if (resizerMacd) {
+        resizerMacd.addEventListener('mousedown', (e) => {
+            startResize(e.clientY, resizerMacd, macdContainer);
+            e.preventDefault();
+        });
+
+        resizerMacd.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 0) {
+                startResize(e.touches[0].clientY, resizerMacd, macdContainer);
+                e.preventDefault();
+            }
+        }, { passive: false });
+    }
 
     document.addEventListener('mousemove', (e) => {
         doResize(e.clientY);
@@ -982,7 +1256,15 @@ async function init() {
     });
     wtResizeObserver.observe(wtContainer);
 
+    const macdResizeObserver = new ResizeObserver(entries => {
+        if (!macdChart) return;
+        const { width, height } = entries[0].contentRect;
+        macdChart.applyOptions({ width, height });
+    });
+    macdResizeObserver.observe(document.getElementById('macd-chart-container'));
+
     updateWTVisibility();
+    updateMACDVisibility();
     if (typeof updateSupertrendVisibility === 'function') {
         updateSupertrendVisibility();
     }
@@ -1108,63 +1390,106 @@ function initChart() {
     // Set horizontal levels for WaveTrend
     updateWTPriceLines();
 
+    // Initialize MACD Chart
+    const macdChartContainer = document.getElementById('macd-chart-container');
+    macdChart = LightweightCharts.createChart(macdChartContainer, {
+        width: macdChartContainer.clientWidth || 600,
+        height: macdChartContainer.clientHeight || 150,
+        layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#94a3b8' },
+        grid: {
+            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: {
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            minimumWidth: 80,
+        },
+        timeScale: {
+            visible: false,
+        },
+    });
+
+    macdChart.priceScale('right').applyOptions({
+        autoScale: true,
+        scaleMargins: {
+            top: 0.1,
+            bottom: 0.1,
+        },
+    });
+
+    macdLineSeries = macdChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: 'MACD', crosshairMarkerVisible: true });
+    macdSigSeries = macdChart.addLineSeries({ color: '#fb923c', lineWidth: 1.5, title: 'Signal', crosshairMarkerVisible: true });
+    macdHistSeries = macdChart.addHistogramSeries({
+        color: '#26a69a',
+        priceFormat: { type: 'volume' },
+        priceScaleId: 'right'
+    });
+
     // Sync time scales
     chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
         wtChart.timeScale().setVisibleLogicalRange(logicalRange);
+        macdChart.timeScale().setVisibleLogicalRange(logicalRange);
     });
     wtChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
         chart.timeScale().setVisibleLogicalRange(logicalRange);
+        macdChart.timeScale().setVisibleLogicalRange(logicalRange);
+    });
+    macdChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
+        chart.timeScale().setVisibleLogicalRange(logicalRange);
+        wtChart.timeScale().setVisibleLogicalRange(logicalRange);
     });
 
-    // Sync crosshairs bidirectionally
+    // Sync crosshairs tridirectionally
     let isSyncingCrosshair = false;
-    chart.subscribeCrosshairMove(param => {
+    function syncCrosshair(sourceChart, param) {
         if (isSyncingCrosshair) return;
         isSyncingCrosshair = true;
         try {
-            if (!param || !param.time || !param.point) {
-                wtChart.clearCrosshairPosition();
+            const time = param && param.time;
+            if (!time) {
+                if (sourceChart !== chart) chart.clearCrosshairPosition();
+                if (sourceChart !== wtChart) wtChart.clearCrosshairPosition();
+                if (sourceChart !== macdChart) macdChart.clearCrosshairPosition();
             } else {
-                const time = param.time;
-                let price = 0;
-                if (window.lastWtData && window.lastWtData.wt1Data) {
-                    const match = window.lastWtData.wt1Data.find(d => d.time === time);
-                    if (match && match.value !== undefined) {
-                        price = match.value;
+                // Sync main chart
+                if (sourceChart !== chart) {
+                    let price = 0;
+                    if (window.klineData) {
+                        const match = window.klineData.find(d => d.time === time);
+                        if (match) price = match.close;
                     }
+                    chart.setCrosshairPosition(price, time, candleSeries);
                 }
-                wtChart.setCrosshairPosition(price, time, wt1Series);
+                // Sync WaveTrend
+                if (sourceChart !== wtChart) {
+                    let price = 0;
+                    if (window.lastWtData && window.lastWtData.wt1Data) {
+                        const match = window.lastWtData.wt1Data.find(d => d.time === time);
+                        if (match && match.value !== undefined) price = match.value;
+                    }
+                    wtChart.setCrosshairPosition(price, time, wt1Series);
+                }
+                // Sync MACD
+                if (sourceChart !== macdChart) {
+                    let price = 0;
+                    if (window.lastMacdData && window.lastMacdData.macdData) {
+                        const match = window.lastMacdData.macdData.find(d => d.time === time);
+                        if (match && match.value !== undefined) price = match.value;
+                    }
+                    macdChart.setCrosshairPosition(price, time, macdLineSeries);
+                }
             }
         } catch (e) {
             console.error(e);
         } finally {
             isSyncingCrosshair = false;
         }
-    });
+     }
 
-    wtChart.subscribeCrosshairMove(param => {
-        if (isSyncingCrosshair) return;
-        isSyncingCrosshair = true;
-        try {
-            if (!param || !param.time || !param.point) {
-                chart.clearCrosshairPosition();
-            } else {
-                const time = param.time;
-                let price = 0;
-                if (window.klineData) {
-                    const match = window.klineData.find(d => d.time === time);
-                    if (match) {
-                        price = match.close;
-                    }
-                }
-                chart.setCrosshairPosition(price, time, candleSeries);
-            }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            isSyncingCrosshair = false;
-        }
-    });
+    chart.subscribeCrosshairMove(param => syncCrosshair(chart, param));
+    wtChart.subscribeCrosshairMove(param => syncCrosshair(wtChart, param));
+    macdChart.subscribeCrosshairMove(param => syncCrosshair(macdChart, param));
 }
 
 async function loadSymbols() {
@@ -1235,7 +1560,15 @@ function updateChartSeries() {
     window.lastWtData = wtData;
     wt1Series.setData(wtData.wt1Data);
     wt2Series.setData(wtData.wt2Data);
-    applyWTMarkers();
+
+    // Calculate and Set MACD Data
+    const macdData = calculateMTFMacd(formattedData, MACD_TF, MACD_FAST, MACD_SLOW, MACD_SIG);
+    window.lastMacdData = macdData;
+    macdLineSeries.setData(macdData.macdData);
+    macdSigSeries.setData(macdData.sigData);
+    macdHistSeries.setData(macdData.histData);
+
+    applyIndicatorMarkers();
 
     // Set Supertrend Data
     renderSupertrend();
@@ -1273,7 +1606,17 @@ function updateIndicators() {
         wt1Series.update(wtData.wt1Data[wtData.wt1Data.length - 1]);
         wt2Series.update(wtData.wt2Data[wtData.wt2Data.length - 1]);
     }
-    applyWTMarkers();
+
+    // Update MACD: recalculate last point
+    const macdData = calculateMTFMacd(data, MACD_TF, MACD_FAST, MACD_SLOW, MACD_SIG);
+    window.lastMacdData = macdData;
+    if (macdData.macdData.length > 0) {
+        macdLineSeries.update(macdData.macdData[macdData.macdData.length - 1]);
+        macdSigSeries.update(macdData.sigData[macdData.sigData.length - 1]);
+        macdHistSeries.update(macdData.histData[macdData.histData.length - 1]);
+    }
+
+    applyIndicatorMarkers();
 
     // Update Supertrend
     renderSupertrend();
@@ -1479,7 +1822,13 @@ function saveUIConfig() {
         wtOb: parseInt(document.getElementById('wt-ob')?.value || '53', 10),
         showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
         supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
-        supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0')
+        supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0'),
+        showMACD: document.getElementById('toggle-macd')?.checked || false,
+        macdHeight: parseInt(document.getElementById('macd-chart-container')?.style.height || '150', 10),
+        macdTF: document.getElementById('macd-tf')?.value || '5m',
+        macdFast: parseInt(document.getElementById('macd-fast')?.value || '12', 10),
+        macdSlow: parseInt(document.getElementById('macd-slow')?.value || '26', 10),
+        macdSig: parseInt(document.getElementById('macd-sig')?.value || '9', 10)
     };
     localStorage.setItem('cats_ui_config', JSON.stringify(uiConfig));
 }
@@ -1529,6 +1878,28 @@ function loadUIConfig() {
             if (config.supertrendMultiplier && document.getElementById('supertrend-multiplier')) {
                 document.getElementById('supertrend-multiplier').value = config.supertrendMultiplier;
                 supertrendMultiplier = config.supertrendMultiplier;
+            }
+            if (typeof config.showMACD === 'boolean' && document.getElementById('toggle-macd')) {
+                document.getElementById('toggle-macd').checked = config.showMACD;
+            }
+            if (config.macdHeight && document.getElementById('macd-chart-container')) {
+                document.getElementById('macd-chart-container').style.height = `${config.macdHeight}px`;
+            }
+            if (config.macdTF && document.getElementById('macd-tf')) {
+                document.getElementById('macd-tf').value = config.macdTF;
+                MACD_TF = config.macdTF;
+            }
+            if (config.macdFast && document.getElementById('macd-fast')) {
+                document.getElementById('macd-fast').value = config.macdFast;
+                MACD_FAST = config.macdFast;
+            }
+            if (config.macdSlow && document.getElementById('macd-slow')) {
+                document.getElementById('macd-slow').value = config.macdSlow;
+                MACD_SLOW = config.macdSlow;
+            }
+            if (config.macdSig && document.getElementById('macd-sig')) {
+                document.getElementById('macd-sig').value = config.macdSig;
+                MACD_SIG = config.macdSig;
             }
         }
     } catch(e) {}

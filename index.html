@@ -70,6 +70,14 @@
                             <span class="label-text">Supertrend</span>
                         </label>
                     </div>
+
+                    <div class="toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="toggle-macd" checked>
+                            <span class="slider"></span>
+                            <span class="label-text">MTF MACD</span>
+                        </label>
+                    </div>
                 </div>
 
                 <div id="wt-params-container" class="input-container hidden">
@@ -108,6 +116,38 @@
                     </div>
                 </div>
 
+                <div id="macd-params-container" class="input-container hidden">
+                    <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">MACD Params:</span>
+                    <div class="input-group" title="Timeframe">
+                        <span class="label-text" style="font-size:0.7rem;">TF</span>
+                        <select id="macd-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
+                            <option value="1m">1m</option>
+                            <option value="3m">3m</option>
+                            <option value="5m" selected>5m</option>
+                            <option value="15m">15m</option>
+                            <option value="30m">30m</option>
+                            <option value="1h">1h</option>
+                            <option value="4h">4h</option>
+                            <option value="1d">1d</option>
+                        </select>
+                    </div>
+                    <div class="divider"></div>
+                    <div class="input-group" title="Fast EMA Period">
+                        <span class="label-text" style="font-size:0.7rem;">Fast</span>
+                        <input type="number" id="macd-fast" class="length-input" value="12" min="1" max="100">
+                    </div>
+                    <div class="divider"></div>
+                    <div class="input-group" title="Slow EMA Period">
+                        <span class="label-text" style="font-size:0.7rem;">Slow</span>
+                        <input type="number" id="macd-slow" class="length-input" value="26" min="1" max="100">
+                    </div>
+                    <div class="divider"></div>
+                    <div class="input-group" title="Signal SMA Period">
+                        <span class="label-text" style="font-size:0.7rem;">Sig</span>
+                        <input type="number" id="macd-sig" class="length-input" value="9" min="1" max="100">
+                    </div>
+                </div>
+
                 <div class="price-display">
                     <span id="current-price" class="price">Loading...</span>
                     <!-- 실시간 상승/하락 폭 표기 등을 위한 요소 -->
@@ -121,6 +161,8 @@
                 <div id="chart-container" class="chart-container"></div>
                 <div id="chart-resizer" class="chart-resizer"></div>
                 <div id="wt-chart-container" class="wt-chart-container"></div>
+                <div id="chart-resizer-macd" class="chart-resizer"></div>
+                <div id="macd-chart-container" class="macd-chart-container"></div>
 
                 <!-- Mobile Trade Toggle FAB -->
                 <button id="mobile-trade-btn" class="mobile-trade-fab">
@@ -182,6 +224,7 @@
                             <select id="signal-select" style="padding: 4px 24px 4px 8px; font-size: 12px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 6px; width: 100%;">
                                 <option value="none">None</option>
                                 <option value="wave_trend">WaveTrend</option>
+                                <option value="mtf_macd">MTF MACD</option>
                                 <option value="rl_model">RL Model (ONNX)</option>
                             </select>
                         </div>

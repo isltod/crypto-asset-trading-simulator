@@ -386,6 +386,16 @@ body {
     display: none;
 }
 
+.macd-chart-container {
+    height: 150px;
+    width: 100%;
+    position: relative;
+}
+
+.macd-chart-container.hidden {
+    display: none;
+}
+
 /* Loading overlay */
 .loading-overlay {
     position: absolute;
