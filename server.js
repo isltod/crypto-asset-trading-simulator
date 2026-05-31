@@ -64,6 +64,10 @@ db.serialize(() => {
         wt_sig INTEGER NOT NULL DEFAULT 4,
         wt_ob INTEGER NOT NULL DEFAULT 53,
         symbol TEXT NOT NULL DEFAULT 'BTCUSDT',
+        macd_tf TEXT NOT NULL DEFAULT '5m',
+        macd_fast INTEGER NOT NULL DEFAULT 12,
+        macd_slow INTEGER NOT NULL DEFAULT 26,
+        macd_sig INTEGER NOT NULL DEFAULT 9,
         FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
 
@@ -110,6 +114,10 @@ db.serialize(() => {
     db.run(`ALTER TABLE accounts ADD COLUMN symbol TEXT NOT NULL DEFAULT 'BTCUSDT'`, (err) => {});
     db.run(`ALTER TABLE positions ADD COLUMN entry_type TEXT NOT NULL DEFAULT 'MANUAL'`, (err) => {});
     db.run(`ALTER TABLE trade_history ADD COLUMN entry_type TEXT NOT NULL DEFAULT 'MANUAL'`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN macd_tf TEXT DEFAULT '5m'`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN macd_fast INTEGER DEFAULT 12`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN macd_slow INTEGER DEFAULT 26`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN macd_sig INTEGER DEFAULT 9`, (err) => {});
 });
 
 // Auth Middleware
@@ -538,6 +546,77 @@ function calculateWaveTrend(formattedData, n1, n2, sigLen) {
     return { wt1Data, wt2Data };
 }
 
+function aggregateKlines(history, timeframe) {
+    const tfMap = {
+        '1m': 60,
+        '3m': 180,
+        '5m': 300,
+        '15m': 900,
+        '30m': 1800,
+        '1h': 3600,
+        '4h': 14400,
+        '1d': 86400
+    };
+    const interval = tfMap[timeframe] || 60;
+    const grouped = {};
+    for (const tick of history) {
+        const key = Math.floor(tick.time / interval) * interval;
+        if (!grouped[key]) {
+            grouped[key] = [];
+        }
+        grouped[key].push(tick);
+    }
+    const aggregated = [];
+    const keys = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+    for (const key of keys) {
+        const group = grouped[key];
+        const open = group[0].open;
+        const close = group[group.length - 1].close;
+        let high = -Infinity;
+        let low = Infinity;
+        for (const tick of group) {
+            if (tick.high > high) high = tick.high;
+            if (tick.low < low) low = tick.low;
+        }
+        aggregated.push({
+            time: key,
+            open,
+            high,
+            low,
+            close
+        });
+    }
+    return aggregated;
+}
+
+function calculateMACDForKlines(klines, fast, slow, sig) {
+    const closes = klines.map(k => k.close);
+    const len = closes.length;
+    const macdLine = new Array(len).fill(0);
+    const signalLine = new Array(len).fill(0);
+    const hist = new Array(len).fill(0);
+    if (len < slow + sig) {
+        return { macdLine, signalLine, hist };
+    }
+    const emaFast = calculateEMA(closes, fast);
+    const emaSlow = calculateEMA(closes, slow);
+    for (let i = 0; i < len; i++) {
+        macdLine[i] = emaFast[i] - emaSlow[i];
+    }
+    const macdSlice = macdLine.slice(slow - 1);
+    const emaSigSlice = calculateEMA(macdSlice, sig);
+    for (let i = 0; i < len; i++) {
+        if (i < slow - 1) {
+            signalLine[i] = 0;
+            hist[i] = 0;
+        } else {
+            signalLine[i] = emaSigSlice[i - (slow - 1)];
+            hist[i] = macdLine[i] - signalLine[i];
+        }
+    }
+    return { macdLine, signalLine, hist };
+}
+
 function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
     if (openingUsers.has(userId)) {
         if (cb) cb(false);
@@ -735,7 +814,7 @@ function checkAutoTradeSignals(symbol, currentPrice) {
     const history = klineHistories[symbol];
     if (!history || history.length < 50) return;
 
-    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model')`, (err, accounts) => {
+    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd')`, (err, accounts) => {
         if (err || !accounts || accounts.length === 0) return;
 
         accounts.forEach(async (account) => {
@@ -766,6 +845,29 @@ function checkAutoTradeSignals(symbol, currentPrice) {
                     signal = 'LONG';
                 } else if (prevWt1 > prevWt2 && currWt1 < currWt2 && currWt1 > obLevel) {
                     signal = 'SHORT';
+                }
+            } else if (account.signal_type === 'mtf_macd') {
+                const tf = account.macd_tf || '5m';
+                const fast = account.macd_fast || 12;
+                const slow = account.macd_slow || 26;
+                const sig = account.macd_sig || 9;
+
+                const aggregated = aggregateKlines(history, tf);
+                const macdResult = calculateMACDForKlines(aggregated, fast, slow, sig);
+                const len = macdResult.macdLine.length;
+                if (len >= 2) {
+                    const prevMacd = macdResult.macdLine[len - 2];
+                    const prevSig = macdResult.signalLine[len - 2];
+                    const currMacd = macdResult.macdLine[len - 1];
+                    const currSig = macdResult.signalLine[len - 1];
+
+                    if (prevMacd !== undefined && prevSig !== undefined && currMacd !== undefined && currSig !== undefined) {
+                        if (prevMacd < prevSig && currMacd > currSig) {
+                            signal = 'LONG';
+                        } else if (prevMacd > prevSig && currMacd < currSig) {
+                            signal = 'SHORT';
+                        }
+                    }
                 }
             } else if (account.signal_type === 'rl_model') {
                 signal = await getRLSignal(symbol);
