@@ -855,17 +855,45 @@ function checkAutoTradeSignals(symbol, currentPrice) {
                 const aggregated = aggregateKlines(history, tf);
                 const macdResult = calculateMACDForKlines(aggregated, fast, slow, sig);
                 const len = macdResult.macdLine.length;
-                if (len >= 2) {
-                    const prevMacd = macdResult.macdLine[len - 2];
-                    const prevSig = macdResult.signalLine[len - 2];
-                    const currMacd = macdResult.macdLine[len - 1];
-                    const currSig = macdResult.signalLine[len - 1];
+                
+                const is1m = tf === '1m';
+                if (is1m) {
+                    if (len >= 2) {
+                        const prevMacd = macdResult.macdLine[len - 2];
+                        const prevSig = macdResult.signalLine[len - 2];
+                        const currMacd = macdResult.macdLine[len - 1];
+                        const currSig = macdResult.signalLine[len - 1];
 
-                    if (prevMacd !== undefined && prevSig !== undefined && currMacd !== undefined && currSig !== undefined) {
-                        if (prevMacd < prevSig && currMacd > currSig) {
-                            signal = 'LONG';
-                        } else if (prevMacd > prevSig && currMacd < currSig) {
-                            signal = 'SHORT';
+                        if (prevMacd !== undefined && prevSig !== undefined && currMacd !== undefined && currSig !== undefined) {
+                            if (prevMacd < prevSig && currMacd > currSig) {
+                                signal = 'LONG';
+                            } else if (prevMacd > prevSig && currMacd < currSig) {
+                                signal = 'SHORT';
+                            }
+                        }
+                    }
+                } else {
+                    if (len >= 3) {
+                        const prevMacd = macdResult.macdLine[len - 3];
+                        const prevSig = macdResult.signalLine[len - 3];
+                        const currMacd = macdResult.macdLine[len - 2];
+                        const currSig = macdResult.signalLine[len - 2];
+
+                        if (prevMacd !== undefined && prevSig !== undefined && currMacd !== undefined && currSig !== undefined) {
+                            const lastCompletedCandle = aggregated[len - 2];
+                            const currentTick = history[history.length - 1];
+                            
+                            const tfMap = { '3m': 180, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400 };
+                            const duration = tfMap[tf] || 300;
+
+                            // Only trigger when the 1m candle close matches the end of the completed higher timeframe candle
+                            if (currentTick && (currentTick.time + 60 === lastCompletedCandle.time + duration)) {
+                                if (prevMacd < prevSig && currMacd > currSig) {
+                                    signal = 'LONG';
+                                } else if (prevMacd > prevSig && currMacd < currSig) {
+                                    signal = 'SHORT';
+                                }
+                            }
                         }
                     }
                 }
