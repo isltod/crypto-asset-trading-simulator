@@ -251,11 +251,15 @@ function calculateMTFMacd(formattedData, tf = MACD_TF, fast = MACD_FAST, slow = 
             aggIdx++;
         }
         
-        const currentAgg = aggregated[aggIdx];
-        if (currentAgg && t >= currentAgg.time) {
-            const mVal = macdResult.macdLine[aggIdx];
-            const sVal = macdResult.signalLine[aggIdx];
-            const hVal = macdResult.hist[aggIdx];
+        // To prevent repainting, use the completed candle (aggIdx - 1) for higher timeframes
+        const is1m = tf === '1m';
+        const useIdx = is1m ? aggIdx : aggIdx - 1;
+        const currentAgg = useIdx >= 0 ? aggregated[useIdx] : null;
+        
+        if (currentAgg) {
+            const mVal = macdResult.macdLine[useIdx];
+            const sVal = macdResult.signalLine[useIdx];
+            const hVal = macdResult.hist[useIdx];
             
             let color = '#26a69a'; // green
             if (hVal < 0) color = '#ef5350'; // red
