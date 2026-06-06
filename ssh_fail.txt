@@ -1,0 +1,107 @@
+2026-06-06 23:21:16.206 [info] [Info	- 14:21:16.201] Launching SSH server with command: ssh -v -T -D 5475 OCI_2_Freemium bash -s
+2026-06-06 23:21:16.212 [info] [Trace	- 14:21:16.212] [stderr] OpenSSH_for_Windows_9.5p1, LibreSSL 3.8.2
+
+2026-06-06 23:21:16.213 [info] [Trace	- 14:21:16.212] [stderr] debug1: Reading configuration data C:\\Users\\wolf/.ssh/config
+
+2026-06-06 23:21:16.213 [info] [Trace	- 14:21:16.213] [stderr] debug1: C:\\Users\\wolf/.ssh/config line 7: Applying options for OCI_2_Freemium
+
+2026-06-06 23:21:16.216 [info] [Trace	- 14:21:16.215] [stderr] debug1: Connecting to 168.107.3.163 [168.107.3.163] port 22.
+
+2026-06-06 23:21:16.222 [info] [Trace	- 14:21:16.221] [stderr] debug1: Connection established.
+
+2026-06-06 23:21:16.223 [info] [Trace	- 14:21:16.222] [stderr] debug1: identity file D:\\Warez\\Oracle Cloud \352\264\200\353\240\250\\freemium.key.pem type -1
+
+2026-06-06 23:21:16.223 [info] [Trace	- 14:21:16.223] [stderr] debug1: identity file D:\\Warez\\Oracle Cloud \352\264\200\353\240\250\\freemium.key.pem-cert type -1
+
+2026-06-06 23:21:16.224 [info] [Trace	- 14:21:16.223] [stderr] debug1: Local version string SSH-2.0-OpenSSH_for_Windows_9.5
+
+2026-06-06 23:21:16.239 [info] [Trace	- 14:21:16.239] [stderr] debug1: Remote protocol version 2.0, remote software version OpenSSH_9.6p1 Ubuntu-3ubuntu13.16
+
+2026-06-06 23:21:16.239 [info] [Trace	- 14:21:16.239] [stderr] debug1: compat_banner: match: OpenSSH_9.6p1 Ubuntu-3ubuntu13.16 pat OpenSSH* compat 0x04000000
+
+2026-06-06 23:21:16.240 [info] [Trace	- 14:21:16.239] [stderr] debug1: Authenticating to 168.107.3.163:22 as 'ubuntu'
+
+2026-06-06 23:21:16.240 [info] [Trace	- 14:21:16.239] [stderr] debug1: load_hostkeys: fopen __PROGRAMDATA__\\ssh/ssh_known_hosts: No such file or directory
+
+2026-06-06 23:21:16.240 [info] [Trace	- 14:21:16.239] [stderr] debug1: load_hostkeys: fopen __PROGRAMDATA__\\ssh/ssh_known_hosts2: No such file or directory
+
+2026-06-06 23:21:16.240 [info] [Trace	- 14:21:16.239] [stderr] debug1: SSH2_MSG_KEXINIT sent
+
+2026-06-06 23:21:16.248 [info] [Trace	- 14:21:16.247] [stderr] debug1: SSH2_MSG_KEXINIT received
+
+2026-06-06 23:21:16.248 [info] [Trace	- 14:21:16.247] [stderr] debug1: kex: algorithm: curve25519-sha256
+
+2026-06-06 23:21:16.248 [info] [Trace	- 14:21:16.247] [stderr] debug1: kex: host key algorithm: ssh-ed25519
+
+2026-06-06 23:21:16.248 [info] [Trace	- 14:21:16.247] [stderr] debug1: kex: server->client cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+
+2026-06-06 23:21:16.248 [info] [Trace	- 14:21:16.247] [stderr] debug1: kex: client->server cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+
+2026-06-06 23:21:16.249 [info] [Trace	- 14:21:16.249] [stderr] debug1: expecting SSH2_MSG_KEX_ECDH_REPLY
+
+2026-06-06 23:21:16.261 [info] [Trace	- 14:21:16.260] [stderr] debug1: SSH2_MSG_KEX_ECDH_REPLY received
+
+2026-06-06 23:21:16.261 [info] [Trace	- 14:21:16.261] [stderr] debug1: Server host key: ssh-ed25519 SHA256:/+JEigmlgU/P3ktdXbUATpTWunh7op96Z2FHFZ34/Dg
+
+2026-06-06 23:21:16.262 [info] [Trace	- 14:21:16.261] [stderr] debug1: load_hostkeys: fopen __PROGRAMDATA__\\ssh/ssh_known_hosts: No such file or directory
+
+2026-06-06 23:21:16.262 [info] [Trace	- 14:21:16.261] [stderr] debug1: load_hostkeys: fopen __PROGRAMDATA__\\ssh/ssh_known_hosts2: No such file or directory
+
+2026-06-06 23:21:16.262 [info] [Trace	- 14:21:16.261] [stderr] Warning: Permanently added '168.107.3.163' (ED25519) to the list of known hosts.
+
+2026-06-06 23:21:16.264 [info] [Trace	- 14:21:16.264] [stderr] debug1: ssh_packet_send2_wrapped: resetting send seqnr 3
+
+2026-06-06 23:21:16.265 [info] [Trace	- 14:21:16.264] [stderr] debug1: rekey out after 134217728 blocks
+
+2026-06-06 23:21:16.265 [info] [Trace	- 14:21:16.264] [stderr] debug1: SSH2_MSG_NEWKEYS sent
+
+2026-06-06 23:21:16.265 [info] [Trace	- 14:21:16.264] [stderr] debug1: expecting SSH2_MSG_NEWKEYS
+
+2026-06-06 23:21:16.265 [info] [Trace	- 14:21:16.264] [stderr] debug1: ssh_packet_read_poll2: resetting read seqnr 3
+
+2026-06-06 23:21:16.265 [info] [Trace	- 14:21:16.264] [stderr] debug1: SSH2_MSG_NEWKEYS received
+
+2026-06-06 23:21:16.265 [info] [Trace	- 14:21:16.264] [stderr] debug1: rekey in after 134217728 blocks
+
+2026-06-06 23:21:16.265 [info] [Trace	- 14:21:16.265] [stderr] debug1: get_agent_identities: ssh_get_authentication_socket: No such file or directory
+
+2026-06-06 23:21:16.265 [info] [Trace	- 14:21:16.265] [stderr] debug1: Will attempt key: D:\\Warez\\Oracle Cloud \352\264\200\353\240\250\\freemium.key.pem  explicit
+
+2026-06-06 23:21:16.265 [info] [Trace	- 14:21:16.265] [stderr] debug1: SSH2_MSG_EXT_INFO received
+
+2026-06-06 23:21:16.266 [info] [Trace	- 14:21:16.265] [stderr] debug1: kex_input_ext_info: server-sig-algs=<ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,sk-ssh-ed25519@openssh.com,sk-ecdsa-sha2-nistp256@openssh.com,rsa-sha2-512,rsa-sha2-256>
+
+2026-06-06 23:21:16.266 [info] [Trace	- 14:21:16.265] [stderr] debug1: kex_ext_info_check_ver: publickey-hostbound@openssh.com=<0>
+
+2026-06-06 23:21:16.266 [info] [Trace	- 14:21:16.265] [stderr] debug1: kex_ext_info_check_ver: ping@openssh.com=<0>
+
+2026-06-06 23:21:16.315 [info] [Trace	- 14:21:16.315] [stderr] debug1: SSH2_MSG_SERVICE_ACCEPT received
+
+2026-06-06 23:21:16.321 [info] [Trace	- 14:21:16.320] [stderr] debug1: Authentications that can continue: publickey
+
+2026-06-06 23:21:16.321 [info] [Trace	- 14:21:16.320] [stderr] debug1: Next authentication method: publickey
+
+2026-06-06 23:21:16.321 [info] [Trace	- 14:21:16.320] [stderr] debug1: Trying private key: D:\\Warez\\Oracle Cloud \352\264\200\353\240\250\\freemium.key.pem
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.321] [stderr] 
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.321] [stderr] @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.321] [stderr] @         WARNING: UNPROTECTED PRIVATE KEY FILE!          @
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.321] [stderr] @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.321] [stderr] Permissions for 'D:\\Warez\\Oracle Cloud \352\264\200\353\240\250\\freemium.key.pem' are too open.
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.321] [stderr] It is required that your private key files are NOT accessible by others.
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.322] [stderr] This private key will be ignored.
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.322] [stderr] Load key "D:\\Warez\\Oracle Cloud \352\264\200\353\240\250\\freemium.key.pem": bad permissions
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.322] [stderr] debug1: No more authentication methods to try.
+
+2026-06-06 23:21:16.322 [info] [Trace	- 14:21:16.322] [stderr] ubuntu@168.107.3.163: Permission denied (publickey).
+
+2026-06-06 23:21:16.325 [info] [Error	- 14:21:16.324] SSH server closed unexpectedly.
+Error code: 255
