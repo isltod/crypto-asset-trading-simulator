@@ -12,13 +12,15 @@ from PySide6.QtGui import QAction
 # 타임프레임별 설정 상수
 TIMEFRAME_CONFIG = {
     '1m':  {'label': '1분',  'ms': 60_000,        'ccxt': '1m',  'cache': 'btc_usdt_1m_cache.csv'},
+    '3m':  {'label': '3분',  'ms': 180_000,       'ccxt': '3m',  'cache': 'btc_usdt_3m_cache.csv'},
     '5m':  {'label': '5분',  'ms': 300_000,       'ccxt': '5m',  'cache': 'btc_usdt_5m_cache.csv'},
+    '15m': {'label': '15분', 'ms': 900_000,       'ccxt': '15m', 'cache': 'btc_usdt_15m_cache.csv'},
     '30m': {'label': '30분', 'ms': 1_800_000,     'ccxt': '30m', 'cache': 'btc_usdt_30m_cache.csv'},
     '1h':  {'label': '1시간','ms': 3_600_000,     'ccxt': '1h',  'cache': 'btc_usdt_1h_cache.csv'},
     '4h':  {'label': '4시간','ms': 14_400_000,    'ccxt': '4h',  'cache': 'btc_usdt_4h_cache.csv'},
     '1d':  {'label': '1일',  'ms': 86_400_000,    'ccxt': '1d',  'cache': 'btc_usdt_1d_cache.csv'},
 }
-TIMEFRAME_KEYS = ['1m', '5m', '30m', '1h', '4h', '1d']
+TIMEFRAME_KEYS = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']
 
 class DownloadDialog(QDialog):
     def __init__(self, parent=None, start_str=None, end_str=None, timeframe='1m'):
@@ -1592,9 +1594,9 @@ class BinanceDataFetcher(QMainWindow):
 
             # 규칙 2~6: 봉 단위 가상 거래 시뮬레이션
             for i in range(total_rows):
-                # label      = int(df.iloc[i - 1]['ls_label']) if i > 0 else 0
+                label      = int(df.iloc[i - 1]['ls_label']) if i > 0 else 0
                 # 이게 이렇게 한 시간 단위만 미래 오염이 발생해도 수익이 어마어마한데...
-                label      = int(df.iloc[i]['ls_label']) if i > 0 else 0
+                # label      = int(df.iloc[i]['ls_label']) if i > 0 else 0
                 open_price = float(df.iloc[i]['open'])
 
                 # 규칙 5-4: 현재 포지션과 다른 label이 나타나면 청산만 수행

@@ -2,7 +2,7 @@
 const basePath = window.location.pathname.replace(/\/$/, '');
 const API_URL = basePath + '/api';
 const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + window.location.pathname;
-const BINANCE_REST_URL = 'https://api.binance.com/api/v3'; // Still used for historical bulk klines
+const BINANCE_REST_URL = API_URL + '/proxy'; // Proxy via backend
 
 // DOM Elements
 const symbolSelect = document.getElementById('symbol-select');
@@ -68,7 +68,7 @@ let candleSeries = null;
 let maSeries = null;
 let bbUpperSeries = null;
 let bbLowerSeries = null;
-let bbMiddleSeries = null; 
+let bbMiddleSeries = null;
 let ws = null;
 let lastClose = 0;
 let maPeriod = 20;
@@ -107,14 +107,14 @@ let MACD_SIG = 9;
 function calculateEMA(values, period) {
     const ema = new Array(values.length).fill(0);
     if (values.length < period) return ema;
-    
+
     let sum = 0;
     for (let i = 0; i < period; i++) {
         sum += values[i];
     }
     const sma = sum / period;
     ema[period - 1] = sma;
-    
+
     const alpha = 2 / (period + 1);
     for (let i = period; i < values.length; i++) {
         ema[i] = values[i] * alpha + ema[i - 1] * (1 - alpha);
@@ -130,17 +130,17 @@ function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN,
 
     const ap = formattedData.map(d => (d.high + d.low + d.close) / 3);
     const esa = calculateEMA(ap, n1);
-    
+
     const absDiff = ap.map((val, idx) => Math.abs(val - esa[idx]));
     const d = calculateEMA(absDiff, n1);
-    
+
     const ci = ap.map((val, idx) => {
         if (d[idx] === 0) return 0;
         return (val - esa[idx]) / (0.015 * d[idx]);
     });
-    
+
     const wt1 = calculateEMA(ci, n2);
-    
+
     // wt2 = sma(wt1, sigLen)
     const wt2 = new Array(len).fill(0);
     for (let i = sigLen - 1; i < len; i++) {
@@ -150,7 +150,7 @@ function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN,
         }
         wt2[i] = sum / sigLen;
     }
-    
+
     const startIdx = n1 + n2;
     for (let i = 0; i < len; i++) {
         if (i < startIdx) {
@@ -161,7 +161,7 @@ function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN,
             wt2Data.push({ time: formattedData[i].time, value: wt2[i] });
         }
     }
-    
+
     return { wt1Data, wt2Data };
 }
 
@@ -239,31 +239,31 @@ function calculateMACDForKlines(klines, fast, slow, sig) {
 function calculateMTFMacd(formattedData, tf = MACD_TF, fast = MACD_FAST, slow = MACD_SLOW, sig = MACD_SIG) {
     const aggregated = aggregateKlines(formattedData, tf);
     const macdResult = calculateMACDForKlines(aggregated, fast, slow, sig);
-    
+
     const macdData = [];
     const sigData = [];
     const histData = [];
-    
+
     let aggIdx = 0;
     for (let i = 0; i < formattedData.length; i++) {
         const t = formattedData[i].time;
         while (aggIdx + 1 < aggregated.length && aggregated[aggIdx + 1].time <= t) {
             aggIdx++;
         }
-        
+
         // To prevent repainting, use the completed candle (aggIdx - 1) for higher timeframes
         const is1m = tf === '1m';
         const useIdx = is1m ? aggIdx : aggIdx - 1;
         const currentAgg = useIdx >= 0 ? aggregated[useIdx] : null;
-        
+
         if (currentAgg) {
             const mVal = macdResult.macdLine[useIdx];
             const sVal = macdResult.signalLine[useIdx];
             const hVal = macdResult.hist[useIdx];
-            
+
             let color = '#26a69a'; // green
             if (hVal < 0) color = '#ef5350'; // red
-            
+
             macdData.push({ time: t, value: mVal });
             sigData.push({ time: t, value: sVal });
             histData.push({ time: t, value: hVal, color: color });
@@ -273,7 +273,7 @@ function calculateMTFMacd(formattedData, tf = MACD_TF, fast = MACD_FAST, slow = 
             histData.push({ time: t });
         }
     }
-    
+
     return { macdData, sigData, histData };
 }
 
@@ -496,7 +496,7 @@ function renderSupertrend() {
     supertrendSeriesList.forEach(series => {
         try {
             chart.removeSeries(series);
-        } catch (e) {}
+        } catch (e) { }
     });
     supertrendSeriesList = [];
 
@@ -562,7 +562,7 @@ function updateWTPriceLines() {
     wtPriceLines.forEach(line => {
         try {
             wt1Series.removePriceLine(line);
-        } catch(e) {}
+        } catch (e) { }
     });
     wtPriceLines = [];
 
@@ -622,7 +622,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
         if (body) options.body = JSON.stringify(body);
         const res = await fetch(`${API_URL}${endpoint}`, options);
         const data = await res.json();
-        
+
         if (res.status === 401 || res.status === 403) {
             handleLogout();
             throw new Error("Unauthorized. Please login again.");
@@ -643,7 +643,7 @@ function handleLogout() {
     activePosition = null;
     tradeHistory = [];
     ws?.close();
-    
+
     // Reset auto trade states
     autoTradeEnabled = false;
     signalType = 'none';
@@ -667,7 +667,7 @@ function updateAuthUI() {
         btnLogout.style.display = 'block';
         userDisplay.style.display = 'block';
         userDisplay.textContent = `Hello, ${currentUsername}`;
-        
+
         btnLong.disabled = false;
         btnShort.disabled = false;
         btnRecharge.disabled = false;
@@ -679,7 +679,7 @@ function updateAuthUI() {
         btnOpenLogin.style.display = 'block';
         btnLogout.style.display = 'none';
         userDisplay.style.display = 'none';
-        
+
         btnLong.disabled = true;
         btnShort.disabled = true;
         btnRecharge.disabled = true;
@@ -688,7 +688,7 @@ function updateAuthUI() {
         document.getElementById('capital-input').value = '-';
         if (signalSelect) signalSelect.disabled = true;
         if (toggleAutoTrade) toggleAutoTrade.disabled = true;
-        
+
         activePosInfo.classList.add('hidden');
     }
 }
@@ -698,7 +698,7 @@ async function fetchAccountData() {
     try {
         const data = await apiCall('/account');
         const acc = data.account;
-        
+
         virtualCapital = acc.virtual_capital;
         leverage = acc.leverage;
         tpslEnabled = acc.tpsl_enabled === 1;
@@ -706,7 +706,7 @@ async function fetchAccountData() {
         slRoi = acc.sl_roi;
         autoTradeEnabled = acc.auto_trade_enabled === 1;
         signalType = acc.signal_type || 'none';
-        
+
         MACD_TF = acc.macd_tf || '5m';
         MACD_FAST = acc.macd_fast || 12;
         MACD_SLOW = acc.macd_slow || 26;
@@ -737,25 +737,25 @@ async function fetchAccountData() {
             activePosition = null;
             activePosInfo.classList.add('hidden');
         }
-        
+
         if (acc.symbol && acc.symbol !== currentSymbol) {
             currentSymbol = acc.symbol;
             symbolSelect.value = currentSymbol;
             await loadChartData(currentSymbol);
         }
         updateBotState();
-    } catch (e) {}
+    } catch (e) { }
 }
 
 function updateBotState() {
     if (!botStateBadge) return;
-    
+
     if (!autoTradeEnabled || signalType === 'none') {
         botStateBadge.className = 'badge badge-inactive';
         botStateBadge.textContent = 'Off';
         return;
     }
-    
+
     if (activePosition) {
         if (activePosition.side === 'LONG') {
             botStateBadge.className = 'badge badge-long';
@@ -771,7 +771,7 @@ function updateBotState() {
 }
 
 async function updateConfig() {
-    if(!authToken) return;
+    if (!authToken) return;
     const wtN1 = parseInt(document.getElementById('wt-n1')?.value || WT_CHANNEL_LEN, 10);
     const wtN2 = parseInt(document.getElementById('wt-n2')?.value || WT_AVG_LEN, 10);
     const wtSig = parseInt(document.getElementById('wt-sig')?.value || WT_SIG_LEN, 10);
@@ -781,7 +781,7 @@ async function updateConfig() {
     const macdFast = parseInt(document.getElementById('macd-fast')?.value || MACD_FAST, 10);
     const macdSlow = parseInt(document.getElementById('macd-slow')?.value || MACD_SLOW, 10);
     const macdSig = parseInt(document.getElementById('macd-sig')?.value || MACD_SIG, 10);
-    
+
     try {
         await apiCall('/account/config', 'POST', {
             leverage: parseInt(document.getElementById('leverage-input').value) || 1,
@@ -803,14 +803,14 @@ async function updateConfig() {
         autoTradeEnabled = toggleAutoTrade ? toggleAutoTrade.checked : false;
         signalType = signalSelect ? signalSelect.value : 'none';
         updateBotState();
-    } catch (e) {}
+    } catch (e) { }
 }
 
 async function fetchHistory() {
     if (!authToken) return;
     try {
         tradeHistory = await apiCall('/history');
-    } catch(e) {}
+    } catch (e) { }
 }
 
 // --- Initialization ---
@@ -821,11 +821,11 @@ async function init() {
     initChart();
     await loadSymbols();
     await loadChartData(currentSymbol);
-    
+
     if (authToken) {
         await fetchAccountData();
     }
-    
+
     // Check backend health periodically
     setInterval(updateBackendStatus, 10000);
     updateBackendStatus();
@@ -859,18 +859,18 @@ async function init() {
             }
         });
     }
-    
+
     btnRecharge.addEventListener('click', async () => {
-        if(!authToken) return;
+        if (!authToken) return;
         const newCap = parseFloat(document.getElementById('capital-input').value);
-        if(isNaN(newCap) || newCap < 0) return alert('Invalid capital amount');
+        if (isNaN(newCap) || newCap < 0) return alert('Invalid capital amount');
 
         try {
             const res = await apiCall('/account/recharge', 'POST', { virtual_capital: newCap });
             document.getElementById('capital-input').value = res.virtual_capital.toFixed(2);
             virtualCapital = res.virtual_capital;
             alert(`Capital has been set to ${res.virtual_capital} USDT`);
-        } catch(e) {}
+        } catch (e) { }
     });
 
     authToggleLink.addEventListener('click', (e) => {
@@ -878,10 +878,10 @@ async function init() {
         isLoginMode = !isLoginMode;
         authTitle.textContent = isLoginMode ? "Login to CATS" : "Register for CATS";
         btnAuthSubmit.textContent = isLoginMode ? "Login" : "Register";
-        document.getElementById('auth-toggle-text').innerHTML = isLoginMode 
+        document.getElementById('auth-toggle-text').innerHTML = isLoginMode
             ? `Don't have an account? <a href="#" id="auth-toggle-link" style="color:var(--up-color); text-decoration:none;">Register here</a>`
             : `Already have an account? <a href="#" id="auth-toggle-link" style="color:var(--up-color); text-decoration:none;">Login here</a>`;
-        
+
         // Re-bind dynamically injected link
         document.getElementById('auth-toggle-link').addEventListener('click', (ev) => {
             ev.preventDefault();
@@ -892,12 +892,12 @@ async function init() {
     btnAuthSubmit.addEventListener('click', async () => {
         const username = authUsername.value;
         const password = authPassword.value;
-        if(!username || !password) return alert('Enter credentials');
-        
+        if (!username || !password) return alert('Enter credentials');
+
         const endpoint = isLoginMode ? '/auth/login' : '/auth/register';
         try {
-            const res = await apiCall(endpoint, 'POST', {username, password});
-            if(isLoginMode) {
+            const res = await apiCall(endpoint, 'POST', { username, password });
+            if (isLoginMode) {
                 authToken = res.token;
                 currentUsername = res.username;
                 localStorage.setItem('cats_token', authToken);
@@ -912,7 +912,7 @@ async function init() {
                 alert('Registration successful! You can now login.');
                 authToggleLink.click();
             }
-        } catch(e) {}
+        } catch (e) { }
     });
 
     document.getElementById('leverage-input').addEventListener('change', updateConfig);
@@ -993,7 +993,7 @@ async function init() {
             let val = parseInt(e.target.value, 10);
             if (isNaN(val) || val < minVal) val = minVal;
             e.target.value = val;
-            
+
             if (id === 'wt-n1') WT_CHANNEL_LEN = val;
             else if (id === 'wt-n2') WT_AVG_LEN = val;
             else if (id === 'wt-sig') WT_SIG_LEN = val;
@@ -1002,7 +1002,7 @@ async function init() {
             updateWTPriceLines();
             if (window.klineData) updateChartSeries();
             saveUIConfig();
-            
+
             if (authToken) {
                 await updateConfig();
             }
@@ -1022,14 +1022,14 @@ async function init() {
             let val = parseInt(e.target.value, 10);
             if (isNaN(val) || val < 1) val = 1;
             e.target.value = val;
-            
+
             if (id === 'macd-fast') MACD_FAST = val;
             else if (id === 'macd-slow') MACD_SLOW = val;
             else if (id === 'macd-sig') MACD_SIG = val;
 
             if (window.klineData) updateChartSeries();
             saveUIConfig();
-            
+
             if (authToken) {
                 await updateConfig();
             }
@@ -1083,13 +1083,13 @@ async function init() {
         let mVal = parseFloat(stMultEl.value);
         if (isNaN(pVal) || pVal < 1) pVal = 10;
         if (isNaN(mVal) || mVal <= 0) mVal = 3.0;
-        
+
         stPeriodEl.value = pVal;
         stMultEl.value = mVal;
-        
+
         supertrendPeriod = pVal;
         supertrendMultiplier = mVal;
-        
+
         if (window.klineData) updateChartSeries();
         saveUIConfig();
     };
@@ -1210,7 +1210,7 @@ async function init() {
             ]);
 
             const csvContent = [headers.join(",")].concat(rows.map(e => e.join(","))).join("\n");
-            
+
             const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
@@ -1231,7 +1231,7 @@ async function init() {
 
     btnConfirmOk.addEventListener('click', async () => {
         confirmModal.classList.add('hidden');
-        if(authToken) {
+        if (authToken) {
             await apiCall('/history', 'DELETE');
         }
         tradeHistory = [];
@@ -1280,7 +1280,7 @@ async function updateBackendStatus() {
         const data = await res.json();
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
-        
+
         if (data.binance.status === 'connected') {
             statusDot.className = 'status-dot online';
             statusText.textContent = 'Backend: Online';
@@ -1307,7 +1307,7 @@ function initChart() {
             horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
         },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        rightPriceScale: { 
+        rightPriceScale: {
             borderColor: 'rgba(255, 255, 255, 0.1)',
             minimumWidth: 80
         },
@@ -1371,7 +1371,7 @@ function initChart() {
             horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
         },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        rightPriceScale: { 
+        rightPriceScale: {
             borderColor: 'rgba(255, 255, 255, 0.1)',
             minimumWidth: 80,
         },
@@ -1489,7 +1489,7 @@ function initChart() {
         } finally {
             isSyncingCrosshair = false;
         }
-     }
+    }
 
     chart.subscribeCrosshairMove(param => syncCrosshair(chart, param));
     wtChart.subscribeCrosshairMove(param => syncCrosshair(wtChart, param));
@@ -1551,7 +1551,7 @@ function updateChartSeries() {
         let varSum = 0;
         for (let j = 0; j < BB_PERIOD; j++) varSum += Math.pow(formattedData[i - j].close - sma, 2);
         const stdDev = Math.sqrt(varSum / BB_PERIOD);
-        
+
         bbMiddleData.push({ time: formattedData[i].time, value: sma });
         bbUpperData.push({ time: formattedData[i].time, value: sma + (BB_STD_DEV * stdDev) });
         bbLowerData.push({ time: formattedData[i].time, value: sma - (BB_STD_DEV * stdDev) });
@@ -1632,7 +1632,7 @@ function connectWebSocket(symbol) {
 
     ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
-        
+
         // Binance Stream Forwarded
         if (message.e === 'kline' && message.s === symbol) {
             const kline = message.k;
@@ -1640,7 +1640,7 @@ function connectWebSocket(symbol) {
                 time: Math.floor(kline.t / 1000), open: parseFloat(kline.o), high: parseFloat(kline.h), low: parseFloat(kline.l), close: parseFloat(kline.c)
             };
             candleSeries.update(tick);
-            
+
             const lastExistingTick = window.klineData[window.klineData.length - 1];
             if (lastExistingTick && lastExistingTick.time === tick.time) {
                 window.klineData[window.klineData.length - 1] = tick;
@@ -1707,8 +1707,8 @@ async function executeTrade(side) {
     if (activePosition) return alert("A position is already open.");
     try {
         const res = await apiCall('/trade/open', 'POST', { side, symbol: currentSymbol, currentPrice: lastClose });
-        await fetchAccountData(); 
-    } catch(e) {}
+        await fetchAccountData();
+    } catch (e) { }
 }
 
 async function closeActiveTrade() {
@@ -1720,7 +1720,7 @@ async function closeActiveTrade() {
         activePosInfo.classList.add('hidden');
         btnLong.disabled = false;
         btnShort.disabled = false;
-    } catch(e) {}
+    } catch (e) { }
 }
 
 function formatEntryTime(timeStr) {
@@ -1758,18 +1758,18 @@ function renderActivePosition() {
         posEntryTypeEl.textContent = type === 'AUTO' ? 'Auto (🤖)' : 'Manual (👤)';
         posEntryTypeEl.style.color = type === 'AUTO' ? 'var(--accent-color)' : 'var(--text-secondary)';
     }
-    
+
     // Support both entry_price and entryPrice properties for consistency between DB and WebSocket events
     const entryPrice = activePosition.entry_price !== undefined ? activePosition.entry_price : activePosition.entryPrice;
     posEntryEl.textContent = entryPrice ? entryPrice.toFixed(2) : '-';
-    
+
     posMarginEl.textContent = activePosition.margin ? activePosition.margin.toFixed(2) + " USDT" : '-';
     posSizeEl.textContent = activePosition.size ? activePosition.size.toFixed(4) : '-';
     updateVisualPnL(lastClose);
 }
 
 function updateVisualPnL(currentPrice) {
-    if(!activePosition || !currentPrice) return;
+    if (!activePosition || !currentPrice) return;
     let pnl = 0, priceMovePct = 0;
     if (activePosition.side === 'LONG') {
         pnl = (currentPrice - activePosition.entry_price) * activePosition.size;
@@ -1906,7 +1906,7 @@ function loadUIConfig() {
                 MACD_SIG = config.macdSig;
             }
         }
-    } catch(e) {}
+    } catch (e) { }
 }
 
 document.addEventListener('DOMContentLoaded', init);

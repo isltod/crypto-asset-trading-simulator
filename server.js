@@ -300,6 +300,30 @@ app.delete(`${BASE_PATH}/api/history`, authenticateToken, (req, res) => {
     });
 });
 
+// Binance Proxy Endpoints for Frontend
+app.get(`${BASE_PATH}/api/proxy/exchangeInfo`, async (req, res) => {
+    const url = `https://fapi.binance.com/fapi/v1/exchangeInfo`;
+    try {
+        const data = await getJson(url);
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get(`${BASE_PATH}/api/proxy/klines`, async (req, res) => {
+    const symbol = req.query.symbol || 'BTCUSDT';
+    const interval = req.query.interval || '1m';
+    const limit = req.query.limit || 1000;
+    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    try {
+        const data = await getJson(url);
+        res.json(data);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Health/Status endpoint
 app.get(`${BASE_PATH}/api/status`, (req, res) => {
     const uptime = process.uptime();
@@ -468,7 +492,7 @@ const klineHistories = {};
 async function initKlineHistories() {
     for (const rawSymbol of SYMBOLS_TO_STREAM) {
         const symbol = rawSymbol.toUpperCase();
-        const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=1000`;
+        const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1m&limit=1000`;
         try {
             const data = await getJson(url);
             klineHistories[symbol] = data.map(d => ({
@@ -930,12 +954,12 @@ function setupBinanceStream() {
     
     // Using combined stream for multi-symbol support
     const streams = SYMBOLS_TO_STREAM.map(s => `${s}@kline_1m`).join('/');
-    const endpoint = `wss://stream.binance.com:9443/stream?streams=${streams}`;
+    const endpoint = `wss://fstream.binance.com/market/stream?streams=${streams}`;
     
     binanceWs = new WebSocket(endpoint);
     
     binanceWs.on('open', () => {
-        console.log("Connected to Binance Spot WebSocket.");
+        console.log("Connected to Binance Futures WebSocket.");
         binanceStatus = "connected";
         binanceError = null;
     });
