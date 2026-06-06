@@ -1,9 +1,9 @@
 const WebSocket = require('ws');
 
 // 바이낸스 USDS-M 선물 웹소켓 주소
-// 단일 스트림: wss://fstream.binance.com/ws/btcusdt@kline_1m
-// 다중 스트림: wss://fstream.binance.com/stream?streams=btcusdt@kline_1m/ethusdt@kline_1m
-const endpoint = 'wss://fstream.binance.com/stream?streams=btcusdt@kline_1m';
+// 단일 스트림: wss://fstream.binance.com/market/ws/btcusdt@kline_1m
+// 다중 스트림: wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m/ethusdt@kline_1m
+const endpoint = 'wss://fstream.binance.com/market/stream?streams=btcusdt@kline_1m';
 
 console.log(`[선물 테스트] 접속 시도 중... ${endpoint}`);
 const ws = new WebSocket(endpoint);

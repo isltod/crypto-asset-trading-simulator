@@ -118,6 +118,7 @@ db.serialize(() => {
     db.run(`ALTER TABLE accounts ADD COLUMN macd_fast INTEGER DEFAULT 12`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN macd_slow INTEGER DEFAULT 26`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN macd_sig INTEGER DEFAULT 9`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN macd_allow_repaint INTEGER DEFAULT 0`, (err) => {});
 });
 
 // Auth Middleware
@@ -202,7 +203,12 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         wt_n2, 
         wt_sig, 
         wt_ob,
-        symbol
+        symbol,
+        macd_tf,
+        macd_fast,
+        macd_slow,
+        macd_sig,
+        macd_allow_repaint
     } = req.body;
 
     db.get(`SELECT * FROM accounts WHERE user_id = ?`, [userId], (err, row) => {
@@ -219,18 +225,23 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         const updatedWtSig = wt_sig !== undefined ? wt_sig : row.wt_sig;
         const updatedWtOb = wt_ob !== undefined ? wt_ob : row.wt_ob;
         const updatedSymbol = symbol !== undefined ? symbol : row.symbol;
+        const updatedMacdTf = macd_tf !== undefined ? macd_tf : row.macd_tf;
+        const updatedMacdFast = macd_fast !== undefined ? macd_fast : row.macd_fast;
+        const updatedMacdSlow = macd_slow !== undefined ? macd_slow : row.macd_slow;
+        const updatedMacdSig = macd_sig !== undefined ? macd_sig : row.macd_sig;
+        const updatedMacdAllowRepaint = macd_allow_repaint !== undefined ? (macd_allow_repaint ? 1 : 0) : row.macd_allow_repaint;
 
         db.run(`UPDATE accounts SET 
             leverage = ?, tpsl_enabled = ?, tp_roi = ?, sl_roi = ?, 
             auto_trade_enabled = ?, signal_type = ?, 
             wt_n1 = ?, wt_n2 = ?, wt_sig = ?, wt_ob = ?,
-            symbol = ?
+            symbol = ?, macd_tf = ?, macd_fast = ?, macd_slow = ?, macd_sig = ?, macd_allow_repaint = ?
             WHERE user_id = ?`, 
             [
                 updatedLeverage, updatedTpsl, updatedTp, updatedSl, 
                 updatedAutoTrade, updatedSignalType, 
                 updatedWtN1, updatedWtN2, updatedWtSig, updatedWtOb, 
-                updatedSymbol,
+                updatedSymbol, updatedMacdTf, updatedMacdFast, updatedMacdSlow, updatedMacdSig, updatedMacdAllowRepaint,
                 userId
             ], 
             (err) => {
@@ -834,7 +845,7 @@ async function getRLSignal(symbol) {
     }
 }
 
-function checkAutoTradeSignals(symbol, currentPrice) {
+function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
     const history = klineHistories[symbol];
     if (!history || history.length < 50) return;
 
@@ -849,6 +860,8 @@ function checkAutoTradeSignals(symbol, currentPrice) {
             let signal = null;
 
             if (account.signal_type === 'wave_trend') {
+                if (!isClosed) return; // WaveTrend only on closed candles
+
                 const n1 = account.wt_n1;
                 const n2 = account.wt_n2;
                 const sigLen = account.wt_sig;
@@ -875,6 +888,9 @@ function checkAutoTradeSignals(symbol, currentPrice) {
                 const fast = account.macd_fast || 12;
                 const slow = account.macd_slow || 26;
                 const sig = account.macd_sig || 9;
+                const allowRepaint = account.macd_allow_repaint === 1;
+
+                if (!isClosed && !allowRepaint) return; // 리페인팅 미허용 시 미마감 캔들 무시
 
                 const aggregated = aggregateKlines(history, tf);
                 const macdResult = calculateMACDForKlines(aggregated, fast, slow, sig);
@@ -887,31 +903,43 @@ function checkAutoTradeSignals(symbol, currentPrice) {
                     // The 1m candle just closed. Its end time is currentTick.time + 60
                     const tClose = currentTick.time + 60;
 
-                    // Only check at the end boundary of the higher timeframe candle
-                    if (tClose % duration === 0) {
-                        const tStartCurr = tClose - duration;
-                        const tStartPrev = tClose - 2 * duration;
+                    if (allowRepaint || (tClose % duration === 0 && isClosed)) {
+                        let prevMacd, prevSig, currMacd, currSig;
 
-                        const idxCurr = aggregated.findIndex(k => k.time === tStartCurr);
-                        const idxPrev = aggregated.findIndex(k => k.time === tStartPrev);
+                        if (allowRepaint) {
+                            const lastIdx = macdResult.macdLine.length - 1;
+                            if (lastIdx >= 1) {
+                                currMacd = macdResult.macdLine[lastIdx];
+                                currSig = macdResult.signalLine[lastIdx];
+                                prevMacd = macdResult.macdLine[lastIdx - 1];
+                                prevSig = macdResult.signalLine[lastIdx - 1];
+                            }
+                        } else {
+                            const tStartCurr = tClose - duration;
+                            const tStartPrev = tClose - 2 * duration;
 
-                        if (idxCurr !== -1 && idxPrev !== -1) {
-                            const prevMacd = macdResult.macdLine[idxPrev];
-                            const prevSig = macdResult.signalLine[idxPrev];
-                            const currMacd = macdResult.macdLine[idxCurr];
-                            const currSig = macdResult.signalLine[idxCurr];
+                            const idxCurr = aggregated.findIndex(k => k.time === tStartCurr);
+                            const idxPrev = aggregated.findIndex(k => k.time === tStartPrev);
 
-                            if (prevMacd !== undefined && prevSig !== undefined && currMacd !== undefined && currSig !== undefined) {
-                                if (prevMacd < prevSig && currMacd > currSig) {
-                                    signal = 'LONG';
-                                } else if (prevMacd > prevSig && currMacd < currSig) {
-                                    signal = 'SHORT';
-                                }
+                            if (idxCurr !== -1 && idxPrev !== -1) {
+                                prevMacd = macdResult.macdLine[idxPrev];
+                                prevSig = macdResult.signalLine[idxPrev];
+                                currMacd = macdResult.macdLine[idxCurr];
+                                currSig = macdResult.signalLine[idxCurr];
+                            }
+                        }
+
+                        if (prevMacd !== undefined && prevSig !== undefined && currMacd !== undefined && currSig !== undefined) {
+                            if (prevMacd < prevSig && currMacd > currSig) {
+                                signal = 'LONG';
+                            } else if (prevMacd > prevSig && currMacd < currSig) {
+                                signal = 'SHORT';
                             }
                         }
                     }
                 }
             } else if (account.signal_type === 'rl_model') {
+                if (!isClosed) return; // RL Model only on closed candles
                 signal = await getRLSignal(symbol);
             }
 
@@ -1006,10 +1034,8 @@ function setupBinanceStream() {
 
                 checkTPSL(symbol, currentPrice);
 
-                // 캔들 마감 시 자동거래 신호 분석
-                if (message.k.x === true) {
-                    checkAutoTradeSignals(symbol, currentPrice);
-                }
+                // 자동거래 신호 분석 (리페인팅 설정 적용을 위해 매 틱마다 호출)
+                checkAutoTradeSignals(symbol, currentPrice, message.k.x === true);
             }
         } catch (e) {
             console.error("Error parsing Binance message:", e);
