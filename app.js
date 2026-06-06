@@ -102,6 +102,7 @@ let MACD_TF = '5m';
 let MACD_FAST = 12;
 let MACD_SLOW = 26;
 let MACD_SIG = 9;
+let MACD_ALLOW_REPAINT = false;
 
 // Helper functions for indicators
 function calculateEMA(values, period) {
@@ -711,6 +712,7 @@ async function fetchAccountData() {
         MACD_FAST = acc.macd_fast || 12;
         MACD_SLOW = acc.macd_slow || 26;
         MACD_SIG = acc.macd_sig || 9;
+        MACD_ALLOW_REPAINT = acc.macd_allow_repaint === 1;
 
         const macdTfInput = document.getElementById('macd-tf');
         if (macdTfInput) macdTfInput.value = MACD_TF;
@@ -720,6 +722,8 @@ async function fetchAccountData() {
         if (macdSlowInput) macdSlowInput.value = MACD_SLOW;
         const macdSigInput = document.getElementById('macd-sig');
         if (macdSigInput) macdSigInput.value = MACD_SIG;
+        const macdRepaintInput = document.getElementById('macd-allow-repaint');
+        if (macdRepaintInput) macdRepaintInput.checked = MACD_ALLOW_REPAINT;
 
         document.getElementById('capital-input').value = virtualCapital.toFixed(2);
         document.getElementById('leverage-input').value = leverage;
@@ -781,6 +785,7 @@ async function updateConfig() {
     const macdFast = parseInt(document.getElementById('macd-fast')?.value || MACD_FAST, 10);
     const macdSlow = parseInt(document.getElementById('macd-slow')?.value || MACD_SLOW, 10);
     const macdSig = parseInt(document.getElementById('macd-sig')?.value || MACD_SIG, 10);
+    const macdAllowRepaint = document.getElementById('macd-allow-repaint')?.checked || false;
 
     try {
         await apiCall('/account/config', 'POST', {
@@ -798,6 +803,7 @@ async function updateConfig() {
             macd_fast: macdFast,
             macd_slow: macdSlow,
             macd_sig: macdSig,
+            macd_allow_repaint: macdAllowRepaint,
             symbol: currentSymbol
         });
         autoTradeEnabled = toggleAutoTrade ? toggleAutoTrade.checked : false;
@@ -1039,6 +1045,16 @@ async function init() {
     bindMACDParamInput('macd-fast');
     bindMACDParamInput('macd-slow');
     bindMACDParamInput('macd-sig');
+
+    const macdRepaintInput = document.getElementById('macd-allow-repaint');
+    if (macdRepaintInput) {
+        macdRepaintInput.addEventListener('change', async (e) => {
+            MACD_ALLOW_REPAINT = e.target.checked;
+            if (authToken) {
+                await updateConfig();
+            }
+        });
+    }
 
     const macdTfInput = document.getElementById('macd-tf');
     if (macdTfInput) {
