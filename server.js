@@ -68,6 +68,13 @@ db.serialize(() => {
         macd_fast INTEGER NOT NULL DEFAULT 12,
         macd_slow INTEGER NOT NULL DEFAULT 26,
         macd_sig INTEGER NOT NULL DEFAULT 9,
+        macd_allow_repaint INTEGER NOT NULL DEFAULT 0,
+        stoch_tf TEXT NOT NULL DEFAULT '5m',
+        stoch_rsi_len INTEGER NOT NULL DEFAULT 14,
+        stoch_len INTEGER NOT NULL DEFAULT 14,
+        stoch_k INTEGER NOT NULL DEFAULT 3,
+        stoch_d INTEGER NOT NULL DEFAULT 3,
+        stoch_allow_repaint INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
 
@@ -119,6 +126,12 @@ db.serialize(() => {
     db.run(`ALTER TABLE accounts ADD COLUMN macd_slow INTEGER DEFAULT 26`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN macd_sig INTEGER DEFAULT 9`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN macd_allow_repaint INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN stoch_tf TEXT DEFAULT '5m'`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN stoch_rsi_len INTEGER DEFAULT 14`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN stoch_len INTEGER DEFAULT 14`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN stoch_k INTEGER DEFAULT 3`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN stoch_d INTEGER DEFAULT 3`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN stoch_allow_repaint INTEGER DEFAULT 0`, (err) => {});
 });
 
 // Auth Middleware
@@ -208,7 +221,13 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         macd_fast,
         macd_slow,
         macd_sig,
-        macd_allow_repaint
+        macd_allow_repaint,
+        stoch_tf,
+        stoch_rsi_len,
+        stoch_len,
+        stoch_k,
+        stoch_d,
+        stoch_allow_repaint
     } = req.body;
 
     db.get(`SELECT * FROM accounts WHERE user_id = ?`, [userId], (err, row) => {
@@ -230,18 +249,26 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         const updatedMacdSlow = macd_slow !== undefined ? macd_slow : row.macd_slow;
         const updatedMacdSig = macd_sig !== undefined ? macd_sig : row.macd_sig;
         const updatedMacdAllowRepaint = macd_allow_repaint !== undefined ? (macd_allow_repaint ? 1 : 0) : row.macd_allow_repaint;
+        const updatedStochTf = stoch_tf !== undefined ? stoch_tf : row.stoch_tf;
+        const updatedStochRsiLen = stoch_rsi_len !== undefined ? stoch_rsi_len : row.stoch_rsi_len;
+        const updatedStochLen = stoch_len !== undefined ? stoch_len : row.stoch_len;
+        const updatedStochK = stoch_k !== undefined ? stoch_k : row.stoch_k;
+        const updatedStochD = stoch_d !== undefined ? stoch_d : row.stoch_d;
+        const updatedStochAllowRepaint = stoch_allow_repaint !== undefined ? (stoch_allow_repaint ? 1 : 0) : row.stoch_allow_repaint;
 
         db.run(`UPDATE accounts SET 
             leverage = ?, tpsl_enabled = ?, tp_roi = ?, sl_roi = ?, 
             auto_trade_enabled = ?, signal_type = ?, 
             wt_n1 = ?, wt_n2 = ?, wt_sig = ?, wt_ob = ?,
-            symbol = ?, macd_tf = ?, macd_fast = ?, macd_slow = ?, macd_sig = ?, macd_allow_repaint = ?
+            symbol = ?, macd_tf = ?, macd_fast = ?, macd_slow = ?, macd_sig = ?, macd_allow_repaint = ?,
+            stoch_tf = ?, stoch_rsi_len = ?, stoch_len = ?, stoch_k = ?, stoch_d = ?, stoch_allow_repaint = ?
             WHERE user_id = ?`, 
             [
                 updatedLeverage, updatedTpsl, updatedTp, updatedSl, 
                 updatedAutoTrade, updatedSignalType, 
                 updatedWtN1, updatedWtN2, updatedWtSig, updatedWtOb, 
                 updatedSymbol, updatedMacdTf, updatedMacdFast, updatedMacdSlow, updatedMacdSig, updatedMacdAllowRepaint,
+                updatedStochTf, updatedStochRsiLen, updatedStochLen, updatedStochK, updatedStochD, updatedStochAllowRepaint,
                 userId
             ], 
             (err) => {
@@ -652,6 +679,107 @@ function calculateMACDForKlines(klines, fast, slow, sig) {
     return { macdLine, signalLine, hist };
 }
 
+function calculateRSI(closes, period = 14) {
+    const len = closes.length;
+    const rsi = new Array(len).fill(null);
+    if (len < period + 1) return rsi;
+    
+    let avgGain = 0;
+    let avgLoss = 0;
+    
+    for (let i = 1; i <= period; i++) {
+        const change = closes[i] - closes[i - 1];
+        if (change > 0) {
+            avgGain += change;
+        } else {
+            avgLoss += Math.abs(change);
+        }
+    }
+    avgGain /= period;
+    avgLoss /= period;
+    
+    rsi[period] = avgLoss === 0 ? 100 : (avgGain === 0 ? 0 : 100 - (100 / (1 + avgGain / avgLoss)));
+    
+    for (let i = period + 1; i < len; i++) {
+        const change = closes[i] - closes[i - 1];
+        const gain = change > 0 ? change : 0;
+        const loss = change < 0 ? Math.abs(change) : 0;
+        
+        avgGain = (avgGain * (period - 1) + gain) / period;
+        avgLoss = (avgLoss * (period - 1) + loss) / period;
+        
+        rsi[i] = avgLoss === 0 ? 100 : (avgGain === 0 ? 0 : 100 - (100 / (1 + avgGain / avgLoss)));
+    }
+    return rsi;
+}
+
+function calculateStochRSI(klines, rsiPeriod = 14, stochPeriod = 14, kPeriod = 3, dPeriod = 3) {
+    const closes = klines.map(k => k.close);
+    const rsi = calculateRSI(closes, rsiPeriod);
+    const len = closes.length;
+    const stochRsiRaw = new Array(len).fill(null);
+    
+    for (let i = 0; i < len; i++) {
+        if (i < rsiPeriod + stochPeriod - 1) continue;
+        
+        let lowestRSI = rsi[i];
+        let highestRSI = rsi[i];
+        let valid = true;
+        for (let j = i - stochPeriod + 1; j <= i; j++) {
+            if (rsi[j] === null) {
+                valid = false;
+                break;
+            }
+            if (rsi[j] < lowestRSI) lowestRSI = rsi[j];
+            if (rsi[j] > highestRSI) highestRSI = rsi[j];
+        }
+        
+        if (!valid) continue;
+        
+        if (highestRSI === lowestRSI) {
+            stochRsiRaw[i] = 0;
+        } else {
+            stochRsiRaw[i] = 100 * (rsi[i] - lowestRSI) / (highestRSI - lowestRSI);
+        }
+    }
+    
+    const kLine = new Array(len).fill(null);
+    for (let i = 0; i < len; i++) {
+        if (i < rsiPeriod + stochPeriod - 1 + kPeriod - 1) continue;
+        let sum = 0;
+        let valid = true;
+        for (let j = i - kPeriod + 1; j <= i; j++) {
+            if (stochRsiRaw[j] === null) {
+                valid = false;
+                break;
+            }
+            sum += stochRsiRaw[j];
+        }
+        if (valid) {
+            kLine[i] = sum / kPeriod;
+        }
+    }
+    
+    const dLine = new Array(len).fill(null);
+    for (let i = 0; i < len; i++) {
+        if (i < rsiPeriod + stochPeriod - 1 + kPeriod - 1 + dPeriod - 1) continue;
+        let sum = 0;
+        let valid = true;
+        for (let j = i - dPeriod + 1; j <= i; j++) {
+            if (kLine[j] === null) {
+                valid = false;
+                break;
+            }
+            sum += kLine[j];
+        }
+        if (valid) {
+            dLine[i] = sum / dPeriod;
+        }
+    }
+    
+    return { kLine, dLine };
+}
+
 function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
     if (openingUsers.has(userId)) {
         if (cb) cb(false);
@@ -849,7 +977,7 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
     const history = klineHistories[symbol];
     if (!history || history.length < 50) return;
 
-    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd')`, (err, accounts) => {
+    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd', 'stoch_rsi')`, (err, accounts) => {
         if (err || !accounts || accounts.length === 0) return;
 
         accounts.forEach(async (account) => {
@@ -933,6 +1061,66 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                             if (prevMacd < prevSig && currMacd > currSig) {
                                 signal = 'LONG';
                             } else if (prevMacd > prevSig && currMacd < currSig) {
+                                signal = 'SHORT';
+                            }
+                        }
+                    }
+                }
+            } else if (account.signal_type === 'stoch_rsi') {
+                const tf = account.stoch_tf || '5m';
+                const rsiPeriod = account.stoch_rsi_len || 14;
+                const stochPeriod = account.stoch_len || 14;
+                const kPeriod = account.stoch_k || 3;
+                const dPeriod = account.stoch_d || 3;
+                const allowRepaint = account.stoch_allow_repaint === 1;
+
+                if (!isClosed && !allowRepaint) return; // ignore uncompleted candles if repaint is not allowed
+
+                const aggregated = aggregateKlines(history, tf);
+                const stochResult = calculateStochRSI(aggregated, rsiPeriod, stochPeriod, kPeriod, dPeriod);
+                
+                const currentTick = history[history.length - 1];
+                if (currentTick) {
+                    const tfMap = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400 };
+                    const duration = tfMap[tf] || 300;
+
+                    const tClose = currentTick.time + 60;
+
+                    if (allowRepaint || (tClose % duration === 0 && isClosed)) {
+                        let prevK, prevD, currK, currD;
+
+                        if (allowRepaint) {
+                            const lastIdx = stochResult.kLine.length - 1;
+                            if (lastIdx >= 1) {
+                                currK = stochResult.kLine[lastIdx];
+                                currD = stochResult.dLine[lastIdx];
+                                prevK = stochResult.kLine[lastIdx - 1];
+                                prevD = stochResult.dLine[lastIdx - 1];
+                            }
+                        } else {
+                            const tStartCurr = tClose - duration;
+                            const tStartPrev = tClose - 2 * duration;
+
+                            const idxCurr = aggregated.findIndex(k => k.time === tStartCurr);
+                            const idxPrev = aggregated.findIndex(k => k.time === tStartPrev);
+
+                            if (idxCurr !== -1 && idxPrev !== -1) {
+                                currK = stochResult.kLine[idxCurr];
+                                currD = stochResult.dLine[idxCurr];
+                                prevK = stochResult.kLine[idxPrev];
+                                prevD = stochResult.dLine[idxPrev];
+                            }
+                        }
+
+                        if (prevK !== null && prevD !== null && currK !== null && currD !== null &&
+                            prevK !== undefined && prevD !== undefined && currK !== undefined && currD !== undefined) {
+                            
+                            // Golden cross in oversold area (<= 20)
+                            if (prevK < prevD && currK > currD && (currK <= 20 || currD <= 20)) {
+                                signal = 'LONG';
+                            }
+                            // Dead cross in overbought area (>= 80)
+                            else if (prevK > prevD && currK < currD && (currK >= 80 || currD >= 80)) {
                                 signal = 'SHORT';
                             }
                         }

@@ -104,6 +104,18 @@ let MACD_SLOW = 26;
 let MACD_SIG = 9;
 let MACD_ALLOW_REPAINT = false;
 
+// StochRSI State & Constants
+let stochRsiChart = null;
+let stochRsiKSeries = null;
+let stochRsiDSeries = null;
+let STOCH_TF = '5m';
+let STOCH_RSI_LEN = 14;
+let STOCH_LEN = 14;
+let STOCH_K = 3;
+let STOCH_D = 3;
+let STOCH_ALLOW_REPAINT = false;
+let stochPriceLines = [];
+
 // Helper functions for indicators
 function calculateEMA(values, period) {
     const ema = new Array(values.length).fill(0);
@@ -237,7 +249,7 @@ function calculateMACDForKlines(klines, fast, slow, sig) {
     return { macdLine, signalLine, hist };
 }
 
-function calculateMTFMacd(formattedData, tf = MACD_TF, fast = MACD_FAST, slow = MACD_SLOW, sig = MACD_SIG) {
+function calculateMTFMacd(formattedData, tf = MACD_TF, fast = MACD_FAST, slow = MACD_SLOW, sig = MACD_SIG, allowRepaint = MACD_ALLOW_REPAINT) {
     const aggregated = aggregateKlines(formattedData, tf);
     const macdResult = calculateMACDForKlines(aggregated, fast, slow, sig);
 
@@ -254,7 +266,7 @@ function calculateMTFMacd(formattedData, tf = MACD_TF, fast = MACD_FAST, slow = 
 
         // To prevent repainting, use the completed candle (aggIdx - 1) for higher timeframes
         const is1m = tf === '1m';
-        const useIdx = is1m ? aggIdx : aggIdx - 1;
+        const useIdx = (is1m || allowRepaint) ? aggIdx : aggIdx - 1;
         const currentAgg = useIdx >= 0 ? aggregated[useIdx] : null;
 
         if (currentAgg) {
@@ -277,6 +289,141 @@ function calculateMTFMacd(formattedData, tf = MACD_TF, fast = MACD_FAST, slow = 
 
     return { macdData, sigData, histData };
 }
+
+function calculateRSI(closes, period = 14) {
+    const len = closes.length;
+    const rsi = new Array(len).fill(null);
+    if (len < period + 1) return rsi;
+    
+    let avgGain = 0;
+    let avgLoss = 0;
+    
+    for (let i = 1; i <= period; i++) {
+        const change = closes[i] - closes[i - 1];
+        if (change > 0) {
+            avgGain += change;
+        } else {
+            avgLoss += Math.abs(change);
+        }
+    }
+    avgGain /= period;
+    avgLoss /= period;
+    
+    rsi[period] = avgLoss === 0 ? 100 : (avgGain === 0 ? 0 : 100 - (100 / (1 + avgGain / avgLoss)));
+    
+    for (let i = period + 1; i < len; i++) {
+        const change = closes[i] - closes[i - 1];
+        const gain = change > 0 ? change : 0;
+        const loss = change < 0 ? Math.abs(change) : 0;
+        
+        avgGain = (avgGain * (period - 1) + gain) / period;
+        avgLoss = (avgLoss * (period - 1) + loss) / period;
+        
+        rsi[i] = avgLoss === 0 ? 100 : (avgGain === 0 ? 0 : 100 - (100 / (1 + avgGain / avgLoss)));
+    }
+    return rsi;
+}
+
+function calculateStochRSI(klines, rsiPeriod = 14, stochPeriod = 14, kPeriod = 3, dPeriod = 3) {
+    const closes = klines.map(k => k.close);
+    const rsi = calculateRSI(closes, rsiPeriod);
+    const len = closes.length;
+    const stochRsiRaw = new Array(len).fill(null);
+    
+    for (let i = 0; i < len; i++) {
+        if (i < rsiPeriod + stochPeriod - 1) continue;
+        
+        let lowestRSI = rsi[i];
+        let highestRSI = rsi[i];
+        let valid = true;
+        for (let j = i - stochPeriod + 1; j <= i; j++) {
+            if (rsi[j] === null) {
+                valid = false;
+                break;
+            }
+            if (rsi[j] < lowestRSI) lowestRSI = rsi[j];
+            if (rsi[j] > highestRSI) highestRSI = rsi[j];
+        }
+        
+        if (!valid) continue;
+        
+        if (highestRSI === lowestRSI) {
+            stochRsiRaw[i] = 0;
+        } else {
+            stochRsiRaw[i] = 100 * (rsi[i] - lowestRSI) / (highestRSI - lowestRSI);
+        }
+    }
+    
+    const kLine = new Array(len).fill(null);
+    for (let i = 0; i < len; i++) {
+        if (i < rsiPeriod + stochPeriod - 1 + kPeriod - 1) continue;
+        let sum = 0;
+        let valid = true;
+        for (let j = i - kPeriod + 1; j <= i; j++) {
+            if (stochRsiRaw[j] === null) {
+                valid = false;
+                break;
+            }
+            sum += stochRsiRaw[j];
+        }
+        if (valid) {
+            kLine[i] = sum / kPeriod;
+        }
+    }
+    
+    const dLine = new Array(len).fill(null);
+    for (let i = 0; i < len; i++) {
+        if (i < rsiPeriod + stochPeriod - 1 + kPeriod - 1 + dPeriod - 1) continue;
+        let sum = 0;
+        let valid = true;
+        for (let j = i - dPeriod + 1; j <= i; j++) {
+            if (kLine[j] === null) {
+                valid = false;
+                break;
+            }
+            sum += kLine[j];
+        }
+        if (valid) {
+            dLine[i] = sum / dPeriod;
+        }
+    }
+    
+    return { kLine, dLine };
+}
+
+function calculateMTFStochRSI(formattedData, tf = STOCH_TF, rsiPeriod = STOCH_RSI_LEN, stochPeriod = STOCH_LEN, kPeriod = STOCH_K, dPeriod = STOCH_D, allowRepaint = STOCH_ALLOW_REPAINT) {
+    const aggregated = aggregateKlines(formattedData, tf);
+    const stochResult = calculateStochRSI(aggregated, rsiPeriod, stochPeriod, kPeriod, dPeriod);
+
+    const kData = [];
+    const dData = [];
+
+    let aggIdx = 0;
+    for (let i = 0; i < formattedData.length; i++) {
+        const t = formattedData[i].time;
+        while (aggIdx + 1 < aggregated.length && aggregated[aggIdx + 1].time <= t) {
+            aggIdx++;
+        }
+
+        const is1m = tf === '1m';
+        const useIdx = (is1m || allowRepaint) ? aggIdx : aggIdx - 1;
+        const currentAgg = useIdx >= 0 ? aggregated[useIdx] : null;
+
+        if (currentAgg) {
+            const kVal = stochResult.kLine[useIdx];
+            const dVal = stochResult.dLine[useIdx];
+
+            kData.push({ time: t, value: kVal !== null ? kVal : undefined });
+            dData.push({ time: t, value: dVal !== null ? dVal : undefined });
+        } else {
+            kData.push({ time: t });
+            dData.push({ time: t });
+        }
+    }
+
+    return { kData, dData };
+}
+
 
 function applyIndicatorMarkers() {
     const toggleWT = document.getElementById('toggle-wt');
@@ -401,6 +548,65 @@ function applyIndicatorMarkers() {
         if (macdLineSeries) macdLineSeries.setMarkers(macdMarkers);
     } else {
         if (macdLineSeries) macdLineSeries.setMarkers([]);
+    }
+
+    // 3. StochRSI Markers
+    const toggleStoch = document.getElementById('toggle-stoch-rsi');
+    if (toggleStoch && toggleStoch.checked && window.lastStochData && window.lastStochData.kData && window.lastStochData.dData) {
+        const stochData = window.lastStochData;
+        const stochMarkers = [];
+        for (let i = 1; i < len; i++) {
+            const prevK = stochData.kData[i - 1].value;
+            const prevD = stochData.dData[i - 1].value;
+            const currK = stochData.kData[i].value;
+            const currD = stochData.dData[i].value;
+
+            if (prevK === undefined || prevD === undefined || currK === undefined || currD === undefined ||
+                prevK === null || prevD === null || currK === null || currD === null) {
+                continue;
+            }
+
+            const time = formattedData[i].time;
+
+            if (prevK < prevD && currK > currD && (currK <= 20 || currD <= 20)) {
+                markers.push({
+                    time: time,
+                    position: 'belowBar',
+                    color: '#22c55e',
+                    shape: 'arrowUp',
+                    text: 'STOCH LONG',
+                    size: 1
+                });
+                stochMarkers.push({
+                    time: time,
+                    position: 'belowBar',
+                    color: '#22c55e',
+                    shape: 'circle',
+                    text: 'L',
+                    size: 1
+                });
+            } else if (prevK > prevD && currK < currD && (currK >= 80 || currD >= 80)) {
+                markers.push({
+                    time: time,
+                    position: 'aboveBar',
+                    color: '#ef4444',
+                    shape: 'arrowDown',
+                    text: 'STOCH SHORT',
+                    size: 1
+                });
+                stochMarkers.push({
+                    time: time,
+                    position: 'aboveBar',
+                    color: '#ef4444',
+                    shape: 'circle',
+                    text: 'S',
+                    size: 1
+                });
+            }
+        }
+        if (stochRsiKSeries) stochRsiKSeries.setMarkers(stochMarkers);
+    } else {
+        if (stochRsiKSeries) stochRsiKSeries.setMarkers([]);
     }
 
     markers.sort((a, b) => a.time - b.time);
@@ -596,6 +802,36 @@ function updateWTPriceLines() {
     wtPriceLines.push(obLine, zeroLine, osLine);
 }
 
+function updateStochPriceLines() {
+    stochPriceLines.forEach(line => {
+        try {
+            stochRsiKSeries.removePriceLine(line);
+        } catch (e) { }
+    });
+    stochPriceLines = [];
+
+    if (!stochRsiKSeries) return;
+
+    const obLine = stochRsiKSeries.createPriceLine({
+        price: 80,
+        color: 'rgba(239, 68, 68, 0.6)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'Overbought (80)',
+    });
+    const osLine = stochRsiKSeries.createPriceLine({
+        price: 20,
+        color: 'rgba(34, 197, 94, 0.6)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'Oversold (20)',
+    });
+
+    stochPriceLines.push(obLine, osLine);
+}
+
 // Tracked from Server
 let virtualCapital = 0;
 let leverage = 1;
@@ -714,6 +950,13 @@ async function fetchAccountData() {
         MACD_SIG = acc.macd_sig || 9;
         MACD_ALLOW_REPAINT = acc.macd_allow_repaint === 1;
 
+        STOCH_TF = acc.stoch_tf || '5m';
+        STOCH_RSI_LEN = acc.stoch_rsi_len || 14;
+        STOCH_LEN = acc.stoch_len || 14;
+        STOCH_K = acc.stoch_k || 3;
+        STOCH_D = acc.stoch_d || 3;
+        STOCH_ALLOW_REPAINT = acc.stoch_allow_repaint === 1;
+
         const macdTfInput = document.getElementById('macd-tf');
         if (macdTfInput) macdTfInput.value = MACD_TF;
         const macdFastInput = document.getElementById('macd-fast');
@@ -724,6 +967,19 @@ async function fetchAccountData() {
         if (macdSigInput) macdSigInput.value = MACD_SIG;
         const macdRepaintInput = document.getElementById('macd-allow-repaint');
         if (macdRepaintInput) macdRepaintInput.checked = MACD_ALLOW_REPAINT;
+
+        const stochTfInput = document.getElementById('stoch-tf');
+        if (stochTfInput) stochTfInput.value = STOCH_TF;
+        const stochRsiLenInput = document.getElementById('stoch-rsi-len');
+        if (stochRsiLenInput) stochRsiLenInput.value = STOCH_RSI_LEN;
+        const stochLenInput = document.getElementById('stoch-len');
+        if (stochLenInput) stochLenInput.value = STOCH_LEN;
+        const stochKInput = document.getElementById('stoch-k');
+        if (stochKInput) stochKInput.value = STOCH_K;
+        const stochDInput = document.getElementById('stoch-d');
+        if (stochDInput) stochDInput.value = STOCH_D;
+        const stochRepaintInput = document.getElementById('stoch-allow-repaint');
+        if (stochRepaintInput) stochRepaintInput.checked = STOCH_ALLOW_REPAINT;
 
         document.getElementById('capital-input').value = virtualCapital.toFixed(2);
         document.getElementById('leverage-input').value = leverage;
@@ -787,6 +1043,13 @@ async function updateConfig() {
     const macdSig = parseInt(document.getElementById('macd-sig')?.value || MACD_SIG, 10);
     const macdAllowRepaint = document.getElementById('macd-allow-repaint')?.checked || false;
 
+    const stochTf = document.getElementById('stoch-tf')?.value || STOCH_TF;
+    const stochRsiLen = parseInt(document.getElementById('stoch-rsi-len')?.value || STOCH_RSI_LEN, 10);
+    const stochLen = parseInt(document.getElementById('stoch-len')?.value || STOCH_LEN, 10);
+    const stochK = parseInt(document.getElementById('stoch-k')?.value || STOCH_K, 10);
+    const stochD = parseInt(document.getElementById('stoch-d')?.value || STOCH_D, 10);
+    const stochAllowRepaint = document.getElementById('stoch-allow-repaint')?.checked || false;
+
     try {
         await apiCall('/account/config', 'POST', {
             leverage: parseInt(document.getElementById('leverage-input').value) || 1,
@@ -804,6 +1067,12 @@ async function updateConfig() {
             macd_slow: macdSlow,
             macd_sig: macdSig,
             macd_allow_repaint: macdAllowRepaint,
+            stoch_tf: stochTf,
+            stoch_rsi_len: stochRsiLen,
+            stoch_len: stochLen,
+            stoch_k: stochK,
+            stoch_d: stochD,
+            stoch_allow_repaint: stochAllowRepaint,
             symbol: currentSymbol
         });
         autoTradeEnabled = toggleAutoTrade ? toggleAutoTrade.checked : false;
@@ -1113,6 +1382,84 @@ async function init() {
     if (stPeriodEl) stPeriodEl.addEventListener('change', onSupertrendParamChange);
     if (stMultEl) stMultEl.addEventListener('change', onSupertrendParamChange);
 
+    // Stochastic RSI Binding Logic
+    const toggleStoch = document.getElementById('toggle-stoch-rsi');
+    const stochContainer = document.getElementById('stoch-chart-container');
+    const resizerStoch = document.getElementById('chart-resizer-stoch');
+    const stochParamsContainer = document.getElementById('stoch-params-container');
+
+    const updateStochVisibility = () => {
+        if (!toggleStoch) return;
+        const isVisible = toggleStoch.checked;
+        if (isVisible) {
+            stochContainer?.classList.remove('hidden');
+            resizerStoch?.classList.remove('hidden');
+            stochParamsContainer?.classList.remove('hidden');
+        } else {
+            stochContainer?.classList.add('hidden');
+            resizerStoch?.classList.add('hidden');
+            stochParamsContainer?.classList.add('hidden');
+        }
+        saveUIConfig();
+        applyIndicatorMarkers();
+    };
+
+    if (toggleStoch) {
+        toggleStoch.addEventListener('change', updateStochVisibility);
+    }
+
+    const bindStochParamInput = (id) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.addEventListener('change', async (e) => {
+            let val = parseInt(e.target.value, 10);
+            if (isNaN(val) || val < 1) val = 1;
+            e.target.value = val;
+
+            if (id === 'stoch-rsi-len') STOCH_RSI_LEN = val;
+            else if (id === 'stoch-len') STOCH_LEN = val;
+            else if (id === 'stoch-k') STOCH_K = val;
+            else if (id === 'stoch-d') STOCH_D = val;
+
+            updateStochPriceLines();
+            if (window.klineData) updateChartSeries();
+            saveUIConfig();
+
+            if (authToken) {
+                await updateConfig();
+            }
+        });
+    };
+
+    bindStochParamInput('stoch-rsi-len');
+    bindStochParamInput('stoch-len');
+    bindStochParamInput('stoch-k');
+    bindStochParamInput('stoch-d');
+
+    const stochRepaintInput = document.getElementById('stoch-allow-repaint');
+    if (stochRepaintInput) {
+        stochRepaintInput.addEventListener('change', async (e) => {
+            STOCH_ALLOW_REPAINT = e.target.checked;
+            if (window.klineData) updateChartSeries();
+            saveUIConfig();
+            if (authToken) {
+                await updateConfig();
+            }
+        });
+    }
+
+    const stochTfInput = document.getElementById('stoch-tf');
+    if (stochTfInput) {
+        stochTfInput.addEventListener('change', async (e) => {
+            STOCH_TF = e.target.value;
+            if (window.klineData) updateChartSeries();
+            saveUIConfig();
+            if (authToken) {
+                await updateConfig();
+            }
+        });
+    }
+
     // Resizer Dragging Logic
     let activeResizer = null;
     let isResizing = false;
@@ -1170,6 +1517,20 @@ async function init() {
         resizerMacd.addEventListener('touchstart', (e) => {
             if (e.touches.length > 0) {
                 startResize(e.touches[0].clientY, resizerMacd, macdContainer);
+                e.preventDefault();
+            }
+        }, { passive: false });
+    }
+
+    if (resizerStoch) {
+        resizerStoch.addEventListener('mousedown', (e) => {
+            startResize(e.clientY, resizerStoch, stochContainer);
+            e.preventDefault();
+        });
+
+        resizerStoch.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 0) {
+                startResize(e.touches[0].clientY, resizerStoch, stochContainer);
                 e.preventDefault();
             }
         }, { passive: false });
@@ -1283,8 +1644,19 @@ async function init() {
     });
     macdResizeObserver.observe(document.getElementById('macd-chart-container'));
 
+    const stochResizeObserver = new ResizeObserver(entries => {
+        if (!stochRsiChart) return;
+        const { width, height } = entries[0].contentRect;
+        stochRsiChart.applyOptions({ width, height });
+    });
+    const stochContainerEl = document.getElementById('stoch-chart-container');
+    if (stochContainerEl) {
+        stochResizeObserver.observe(stochContainerEl);
+    }
+
     updateWTVisibility();
     updateMACDVisibility();
+    updateStochVisibility();
     if (typeof updateSupertrendVisibility === 'function') {
         updateSupertrendVisibility();
     }
@@ -1446,21 +1818,62 @@ function initChart() {
         priceScaleId: 'right'
     });
 
+    // Initialize Stochastic RSI Chart
+    const stochChartContainer = document.getElementById('stoch-chart-container');
+    stochRsiChart = LightweightCharts.createChart(stochChartContainer, {
+        width: stochChartContainer.clientWidth || 600,
+        height: stochChartContainer.clientHeight || 150,
+        layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#94a3b8' },
+        grid: {
+            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: {
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            minimumWidth: 80,
+        },
+        timeScale: {
+            visible: false,
+        },
+    });
+
+    stochRsiChart.priceScale('right').applyOptions({
+        autoScale: true,
+        scaleMargins: {
+            top: 0.1,
+            bottom: 0.1,
+        },
+    });
+
+    stochRsiKSeries = stochRsiChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: '%K', crosshairMarkerVisible: true });
+    stochRsiDSeries = stochRsiChart.addLineSeries({ color: '#fb923c', lineWidth: 1.5, title: '%D', lineStyle: LightweightCharts.LineStyle.Dashed, crosshairMarkerVisible: true });
+
+    updateStochPriceLines();
+
     // Sync time scales
     chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
         wtChart.timeScale().setVisibleLogicalRange(logicalRange);
         macdChart.timeScale().setVisibleLogicalRange(logicalRange);
+        stochRsiChart.timeScale().setVisibleLogicalRange(logicalRange);
     });
     wtChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
         chart.timeScale().setVisibleLogicalRange(logicalRange);
         macdChart.timeScale().setVisibleLogicalRange(logicalRange);
+        stochRsiChart.timeScale().setVisibleLogicalRange(logicalRange);
     });
     macdChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
         chart.timeScale().setVisibleLogicalRange(logicalRange);
         wtChart.timeScale().setVisibleLogicalRange(logicalRange);
+        stochRsiChart.timeScale().setVisibleLogicalRange(logicalRange);
+    });
+    stochRsiChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
+        chart.timeScale().setVisibleLogicalRange(logicalRange);
+        wtChart.timeScale().setVisibleLogicalRange(logicalRange);
+        macdChart.timeScale().setVisibleLogicalRange(logicalRange);
     });
 
-    // Sync crosshairs tridirectionally
+    // Sync crosshairs quad-directionally
     let isSyncingCrosshair = false;
     function syncCrosshair(sourceChart, param) {
         if (isSyncingCrosshair) return;
@@ -1471,6 +1884,7 @@ function initChart() {
                 if (sourceChart !== chart) chart.clearCrosshairPosition();
                 if (sourceChart !== wtChart) wtChart.clearCrosshairPosition();
                 if (sourceChart !== macdChart) macdChart.clearCrosshairPosition();
+                if (sourceChart !== stochRsiChart) stochRsiChart.clearCrosshairPosition();
             } else {
                 // Sync main chart
                 if (sourceChart !== chart) {
@@ -1499,6 +1913,15 @@ function initChart() {
                     }
                     macdChart.setCrosshairPosition(price, time, macdLineSeries);
                 }
+                // Sync StochRSI
+                if (sourceChart !== stochRsiChart) {
+                    let price = 0;
+                    if (window.lastStochData && window.lastStochData.kData) {
+                        const match = window.lastStochData.kData.find(d => d.time === time);
+                        if (match && match.value !== undefined) price = match.value;
+                    }
+                    stochRsiChart.setCrosshairPosition(price, time, stochRsiKSeries);
+                }
             }
         } catch (e) {
             console.error(e);
@@ -1510,6 +1933,7 @@ function initChart() {
     chart.subscribeCrosshairMove(param => syncCrosshair(chart, param));
     wtChart.subscribeCrosshairMove(param => syncCrosshair(wtChart, param));
     macdChart.subscribeCrosshairMove(param => syncCrosshair(macdChart, param));
+    stochRsiChart.subscribeCrosshairMove(param => syncCrosshair(stochRsiChart, param));
 }
 
 async function loadSymbols() {
@@ -1582,11 +2006,17 @@ function updateChartSeries() {
     wt2Series.setData(wtData.wt2Data);
 
     // Calculate and Set MACD Data
-    const macdData = calculateMTFMacd(formattedData, MACD_TF, MACD_FAST, MACD_SLOW, MACD_SIG);
+    const macdData = calculateMTFMacd(formattedData, MACD_TF, MACD_FAST, MACD_SLOW, MACD_SIG, MACD_ALLOW_REPAINT);
     window.lastMacdData = macdData;
     macdLineSeries.setData(macdData.macdData);
     macdSigSeries.setData(macdData.sigData);
     macdHistSeries.setData(macdData.histData);
+
+    // Calculate and Set StochRSI Data
+    const stochData = calculateMTFStochRSI(formattedData, STOCH_TF, STOCH_RSI_LEN, STOCH_LEN, STOCH_K, STOCH_D, STOCH_ALLOW_REPAINT);
+    window.lastStochData = stochData;
+    stochRsiKSeries.setData(stochData.kData);
+    stochRsiDSeries.setData(stochData.dData);
 
     applyIndicatorMarkers();
 
@@ -1628,12 +2058,20 @@ function updateIndicators() {
     }
 
     // Update MACD: recalculate last point
-    const macdData = calculateMTFMacd(data, MACD_TF, MACD_FAST, MACD_SLOW, MACD_SIG);
+    const macdData = calculateMTFMacd(data, MACD_TF, MACD_FAST, MACD_SLOW, MACD_SIG, MACD_ALLOW_REPAINT);
     window.lastMacdData = macdData;
     if (macdData.macdData.length > 0) {
         macdLineSeries.update(macdData.macdData[macdData.macdData.length - 1]);
         macdSigSeries.update(macdData.sigData[macdData.sigData.length - 1]);
         macdHistSeries.update(macdData.histData[macdData.histData.length - 1]);
+    }
+
+    // Update StochRSI: recalculate last point
+    const stochData = calculateMTFStochRSI(data, STOCH_TF, STOCH_RSI_LEN, STOCH_LEN, STOCH_K, STOCH_D, STOCH_ALLOW_REPAINT);
+    window.lastStochData = stochData;
+    if (stochData.kData.length > 0) {
+        stochRsiKSeries.update(stochData.kData[stochData.kData.length - 1]);
+        stochRsiDSeries.update(stochData.dData[stochData.dData.length - 1]);
     }
 
     applyIndicatorMarkers();
@@ -1848,7 +2286,14 @@ function saveUIConfig() {
         macdTF: document.getElementById('macd-tf')?.value || '5m',
         macdFast: parseInt(document.getElementById('macd-fast')?.value || '12', 10),
         macdSlow: parseInt(document.getElementById('macd-slow')?.value || '26', 10),
-        macdSig: parseInt(document.getElementById('macd-sig')?.value || '9', 10)
+        macdSig: parseInt(document.getElementById('macd-sig')?.value || '9', 10),
+        showStochRSI: document.getElementById('toggle-stoch-rsi')?.checked || false,
+        stochHeight: parseInt(document.getElementById('stoch-chart-container')?.style.height || '150', 10),
+        stochTF: document.getElementById('stoch-tf')?.value || '5m',
+        stochRsiLen: parseInt(document.getElementById('stoch-rsi-len')?.value || '14', 10),
+        stochLen: parseInt(document.getElementById('stoch-len')?.value || '14', 10),
+        stochK: parseInt(document.getElementById('stoch-k')?.value || '3', 10),
+        stochD: parseInt(document.getElementById('stoch-d')?.value || '3', 10)
     };
     localStorage.setItem('cats_ui_config', JSON.stringify(uiConfig));
 }
@@ -1920,6 +2365,32 @@ function loadUIConfig() {
             if (config.macdSig && document.getElementById('macd-sig')) {
                 document.getElementById('macd-sig').value = config.macdSig;
                 MACD_SIG = config.macdSig;
+            }
+            if (typeof config.showStochRSI === 'boolean' && document.getElementById('toggle-stoch-rsi')) {
+                document.getElementById('toggle-stoch-rsi').checked = config.showStochRSI;
+            }
+            if (config.stochHeight && document.getElementById('stoch-chart-container')) {
+                document.getElementById('stoch-chart-container').style.height = `${config.stochHeight}px`;
+            }
+            if (config.stochTF && document.getElementById('stoch-tf')) {
+                document.getElementById('stoch-tf').value = config.stochTF;
+                STOCH_TF = config.stochTF;
+            }
+            if (config.stochRsiLen && document.getElementById('stoch-rsi-len')) {
+                document.getElementById('stoch-rsi-len').value = config.stochRsiLen;
+                STOCH_RSI_LEN = config.stochRsiLen;
+            }
+            if (config.stochLen && document.getElementById('stoch-len')) {
+                document.getElementById('stoch-len').value = config.stochLen;
+                STOCH_LEN = config.stochLen;
+            }
+            if (config.stochK && document.getElementById('stoch-k')) {
+                document.getElementById('stoch-k').value = config.stochK;
+                STOCH_K = config.stochK;
+            }
+            if (config.stochD && document.getElementById('stoch-d')) {
+                document.getElementById('stoch-d').value = config.stochD;
+                STOCH_D = config.stochD;
             }
         }
     } catch (e) { }

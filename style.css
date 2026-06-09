@@ -396,6 +396,16 @@ body {
     display: none;
 }
 
+.stoch-chart-container {
+    height: 150px;
+    width: 100%;
+    position: relative;
+}
+
+.stoch-chart-container.hidden {
+    display: none;
+}
+
 /* Loading overlay */
 .loading-overlay {
     position: absolute;
