@@ -1957,8 +1957,17 @@ async function loadSymbols() {
 async function loadChartData(symbol) {
     if (ws) { ws.close(); ws = null; }
     try {
-        const response = await fetch(`${BINANCE_REST_URL}/klines?symbol=${symbol}&interval=1m&limit=1000`);
-        const data = await response.json();
+        const res1 = await fetch(`${BINANCE_REST_URL}/klines?symbol=${symbol}&interval=1m&limit=1500`);
+        const data1 = await res1.json();
+        
+        let data = data1;
+        if (data1.length > 0) {
+            const endTime = data1[0][0] - 1;
+            const res2 = await fetch(`${BINANCE_REST_URL}/klines?symbol=${symbol}&interval=1m&limit=1500&endTime=${endTime}`);
+            const data2 = await res2.json();
+            data = data2.concat(data1);
+        }
+
         window.klineData = data.map(d => ({
             time: Math.floor(d[0] / 1000), open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4])
         }));
