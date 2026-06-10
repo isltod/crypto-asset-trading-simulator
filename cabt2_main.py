@@ -540,6 +540,162 @@ class MtfMacdDialog(QDialog):
                 self.ls_checkbox.isChecked())
 
 
+class KalmanMtfMacdDialog(QDialog):
+    def __init__(self, parent=None, current_tf='1m'):
+        super().__init__(parent)
+        self.setWindowTitle("칼만 필터 + MTF MACD 설정")
+        self.resize(340, 360)
+
+        layout = QVBoxLayout(self)
+
+        # 타임프레임 선택
+        tf_layout = QHBoxLayout()
+        tf_layout.addWidget(QLabel("대상 시간 틀:"))
+        self.tf_combo = QComboBox()
+        for key in TIMEFRAME_KEYS:
+            self.tf_combo.addItem(TIMEFRAME_CONFIG[key]['label'], key)
+        try:
+            curr_idx = TIMEFRAME_KEYS.index(current_tf)
+            default_idx = min(curr_idx + 1, len(TIMEFRAME_KEYS) - 1)
+        except ValueError:
+            default_idx = 0
+        self.tf_combo.setCurrentIndex(default_idx)
+        tf_layout.addWidget(self.tf_combo)
+        layout.addLayout(tf_layout)
+
+        # 칼만 필터 파라미터
+        from PySide6.QtWidgets import QGroupBox
+        kalman_group = QGroupBox("칼만 필터 파라미터")
+        kalman_layout = QVBoxLayout(kalman_group)
+
+        q_layout = QHBoxLayout()
+        q_layout.addWidget(QLabel("프로세스 노이즈 (Q):"))
+        self.q_spin = QDoubleSpinBox()
+        self.q_spin.setRange(0.0001, 10.0)
+        self.q_spin.setDecimals(4)
+        self.q_spin.setSingleStep(0.001)
+        self.q_spin.setValue(0.01)
+        q_layout.addWidget(self.q_spin)
+        kalman_layout.addLayout(q_layout)
+
+        r_layout = QHBoxLayout()
+        r_layout.addWidget(QLabel("측정 노이즈 (R):"))
+        self.r_spin = QDoubleSpinBox()
+        self.r_spin.setRange(0.001, 100.0)
+        self.r_spin.setDecimals(3)
+        self.r_spin.setSingleStep(0.1)
+        self.r_spin.setValue(1.0)
+        r_layout.addWidget(self.r_spin)
+        kalman_layout.addLayout(r_layout)
+
+        layout.addWidget(kalman_group)
+
+        # MACD 파라미터
+        fast_layout = QHBoxLayout()
+        fast_layout.addWidget(QLabel("빠른 EMA 기간:"))
+        self.fast_spin = QSpinBox()
+        self.fast_spin.setRange(1, 400)
+        self.fast_spin.setValue(12)
+        fast_layout.addWidget(self.fast_spin)
+        layout.addLayout(fast_layout)
+
+        slow_layout = QHBoxLayout()
+        slow_layout.addWidget(QLabel("느린 EMA 기간:"))
+        self.slow_spin = QSpinBox()
+        self.slow_spin.setRange(1, 400)
+        self.slow_spin.setValue(26)
+        slow_layout.addWidget(self.slow_spin)
+        layout.addLayout(slow_layout)
+
+        sig_layout = QHBoxLayout()
+        sig_layout.addWidget(QLabel("시그널 기간:"))
+        self.sig_spin = QSpinBox()
+        self.sig_spin.setRange(1, 400)
+        self.sig_spin.setValue(9)
+        sig_layout.addWidget(self.sig_spin)
+        layout.addLayout(sig_layout)
+
+        self.ls_checkbox = QCheckBox("LS 라벨링 적용")
+        layout.addWidget(self.ls_checkbox)
+
+        self.action_btn = QPushButton("차트에 추가")
+        self.action_btn.clicked.connect(self.accept)
+        layout.addWidget(self.action_btn)
+
+    def get_settings(self):
+        return (self.tf_combo.currentData(),
+                self.q_spin.value(), self.r_spin.value(),
+                self.fast_spin.value(), self.slow_spin.value(),
+                self.sig_spin.value(), self.ls_checkbox.isChecked())
+
+
+class MtfStochRsiDialog(QDialog):
+    def __init__(self, parent=None, current_tf='1m'):
+        super().__init__(parent)
+        self.setWindowTitle("다중 타임프레임 Stochastic RSI 설정")
+        self.resize(320, 260)
+        
+        layout = QVBoxLayout(self)
+        
+        tf_layout = QHBoxLayout()
+        tf_layout.addWidget(QLabel("대상 시간 틀:"))
+        self.tf_combo = QComboBox()
+        for key in TIMEFRAME_KEYS:
+            self.tf_combo.addItem(TIMEFRAME_CONFIG[key]['label'], key)
+        try:
+            curr_idx = TIMEFRAME_KEYS.index(current_tf)
+            default_idx = min(curr_idx + 1, len(TIMEFRAME_KEYS) - 1)
+        except ValueError:
+            default_idx = 0
+        self.tf_combo.setCurrentIndex(default_idx)
+        tf_layout.addWidget(self.tf_combo)
+        layout.addLayout(tf_layout)
+        
+        rsi_layout = QHBoxLayout()
+        rsi_layout.addWidget(QLabel("RSI 기간:"))
+        self.rsi_spin = QSpinBox()
+        self.rsi_spin.setRange(1, 400)
+        self.rsi_spin.setValue(14)
+        rsi_layout.addWidget(self.rsi_spin)
+        layout.addLayout(rsi_layout)
+        
+        stoch_layout = QHBoxLayout()
+        stoch_layout.addWidget(QLabel("Stochastic 기간:"))
+        self.stoch_spin = QSpinBox()
+        self.stoch_spin.setRange(1, 400)
+        self.stoch_spin.setValue(14)
+        stoch_layout.addWidget(self.stoch_spin)
+        layout.addLayout(stoch_layout)
+        
+        k_layout = QHBoxLayout()
+        k_layout.addWidget(QLabel("K 스무딩:"))
+        self.k_spin = QSpinBox()
+        self.k_spin.setRange(1, 400)
+        self.k_spin.setValue(3)
+        k_layout.addWidget(self.k_spin)
+        layout.addLayout(k_layout)
+        
+        d_layout = QHBoxLayout()
+        d_layout.addWidget(QLabel("D 스무딩:"))
+        self.d_spin = QSpinBox()
+        self.d_spin.setRange(1, 400)
+        self.d_spin.setValue(3)
+        d_layout.addWidget(self.d_spin)
+        layout.addLayout(d_layout)
+        
+        self.ls_checkbox = QCheckBox("LS 라벨링 적용")
+        layout.addWidget(self.ls_checkbox)
+        
+        self.action_btn = QPushButton("차트에 추가")
+        self.action_btn.clicked.connect(self.accept)
+        layout.addWidget(self.action_btn)
+        
+    def get_settings(self):
+        return (self.tf_combo.currentData(), self.rsi_spin.value(),
+                self.stoch_spin.value(), self.k_spin.value(),
+                self.d_spin.value(), self.ls_checkbox.isChecked())
+
+
 
 import matplotlib
 matplotlib.use('QtAgg')
@@ -566,6 +722,8 @@ class BinanceDataFetcher(QMainWindow):
         self.squeeze_settings = []       # [(bb_len, bb_mult, kc_len, kc_mult), ...]
         self.wavetrend_settings = []     # [(ch_len, avg_len, ob_level, os_level), ...]
         self.mtf_macd_settings = []      # [(tf_key, fast_len, slow_len, sig_len), ...]
+        self.kalman_mtf_macd_settings = [] # [(tf_key, Q, R, fast_len, slow_len, sig_len), ...]
+        self.mtf_stoch_rsi_settings = [] # [(tf_key, rsi_len, stoch_len, k_len, d_len), ...]
 
         # 현재 선택된 타임프레임 (기본값: 1분)
         self.current_timeframe = '1m'
@@ -650,6 +808,14 @@ class BinanceDataFetcher(QMainWindow):
         macd_action = QAction("다중 타임프레임 MACD...", self)
         macd_action.triggered.connect(self.open_mtf_macd_dialog)
         indicator_menu.addAction(macd_action)
+
+        kalman_macd_action = QAction("칼만 필터 + MTF MACD...", self)
+        kalman_macd_action.triggered.connect(self.open_kalman_mtf_macd_dialog)
+        indicator_menu.addAction(kalman_macd_action)
+
+        stoch_rsi_action = QAction("다중 타임프레임 Stochastic RSI...", self)
+        stoch_rsi_action.triggered.connect(self.open_mtf_stoch_rsi_dialog)
+        indicator_menu.addAction(stoch_rsi_action)
 
         indicator_menu.addSeparator()
 
@@ -1073,13 +1239,18 @@ class BinanceDataFetcher(QMainWindow):
             df_target['mtf_macd'] = macd_line
             df_target['mtf_sig'] = sig_line
             
+            # 완성된 캔들만 사용하기 위해 타임스탬프를 캔들 종료 시점으로 이동 (Lookahead Bias 방지)
+            target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+            df_target['timestamp_shifted'] = df_target['timestamp'] + target_ms
+            
             df_curr_sorted = df_curr.sort_values('timestamp')
-            df_target_sorted = df_target[['timestamp', 'mtf_macd', 'mtf_sig']].sort_values('timestamp')
+            df_target_sorted = df_target[['timestamp_shifted', 'mtf_macd', 'mtf_sig']].sort_values('timestamp_shifted')
             
             merged = pd.merge_asof(
                 df_curr_sorted,
                 df_target_sorted,
-                on='timestamp',
+                left_on='timestamp',
+                right_on='timestamp_shifted',
                 direction='backward'
             )
             
@@ -1202,7 +1373,9 @@ class BinanceDataFetcher(QMainWindow):
         df_target['mtf_sig'] = sig_line
         df_target['mtf_hist'] = hist
         
-        df_target['timestamp_dt'] = pd.to_datetime(df_target['timestamp'], unit='ms') + pd.Timedelta(hours=9)
+        # 완성된 캔들만 사용하기 위해 타임스탬프를 캔들 종료 시점으로 이동 (Lookahead Bias 방지)
+        target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+        df_target['timestamp_dt'] = pd.to_datetime(df_target['timestamp'] + target_ms, unit='ms') + pd.Timedelta(hours=9)
         
         temp_df = plot_df.copy().reset_index()
         temp_df_sorted = temp_df.sort_values('timestamp')
@@ -1302,7 +1475,7 @@ class BinanceDataFetcher(QMainWindow):
     def clear_indicators(self):
         if (self.sma_periods or self.supertrend_settings or self.ma_slope_settings or
             self.hull_suite_settings or self.squeeze_settings or self.wavetrend_settings or
-            self.mtf_macd_settings):
+            self.mtf_macd_settings or self.kalman_mtf_macd_settings or self.mtf_stoch_rsi_settings):
             
             self.sma_periods.clear()
             self.supertrend_settings.clear()
@@ -1311,10 +1484,355 @@ class BinanceDataFetcher(QMainWindow):
             self.squeeze_settings.clear()
             self.wavetrend_settings.clear()
             self.mtf_macd_settings.clear()
+            self.kalman_mtf_macd_settings.clear()
+            self.mtf_stoch_rsi_settings.clear()
             
             if hasattr(self, 'current_df') and not self.current_df.empty:
                 self.populate_ui(self.current_df)
             QMessageBox.information(self, "지표 초기화", "추가된 모든 지표가 차트에서 제거되었습니다.")
+
+    def calculate_kalman_filter(self, series, Q=0.01, R=1.0):
+        """1D 칼만 필터로 가격 시계열을 평활화.
+        - Q: 프로세스 노이즈 공분산 (작을수록 부드러움, 클수록 원본에 가까움)
+        - R: 측정 노이즈 공분산 (클수록 관측값을 덜 신뢰 → 더 부드러움)
+        반환: 평활화된 가격 Series
+        """
+        values = series.values.astype(float)
+        n = len(values)
+        
+        # 초기 상태: 첫 번째 관측값으로 설정
+        x_hat = values[0]   # 상태 추정값
+        P = 1.0             # 추정 오차 공분산
+        
+        filtered = np.zeros(n)
+        filtered[0] = x_hat
+        
+        for i in range(1, n):
+            # 예측 단계 (Predict)
+            x_hat_minus = x_hat       # 상태 전이: x(k) = x(k-1) (랜덤워크 모델)
+            P_minus = P + Q           # 오차 공분산 예측
+            
+            # 갱신 단계 (Update)
+            K = P_minus / (P_minus + R)   # 칼만 게인
+            x_hat = x_hat_minus + K * (values[i] - x_hat_minus)  # 상태 갱신
+            P = (1 - K) * P_minus         # 오차 공분산 갱신
+            
+            filtered[i] = x_hat
+        
+        return pd.Series(filtered, index=series.index)
+
+    def calculate_kalman_macd(self, series, Q, R, fast_len, slow_len, sig_len):
+        """칼만 필터로 가격을 평활한 뒤 표준 MACD를 계산.
+        방식 A: Price → Kalman Filter → EMA(fast) - EMA(slow) → Signal
+        """
+        smoothed = self.calculate_kalman_filter(series, Q, R)
+        return self.calculate_macd(smoothed, fast_len, slow_len, sig_len)
+
+    def open_kalman_mtf_macd_dialog(self):
+        dialog = KalmanMtfMacdDialog(self, current_tf=self.current_timeframe)
+        if dialog.exec():
+            tf_key, Q, R, fast_len, slow_len, sig_len, use_ls = dialog.get_settings()
+            setting = (tf_key, Q, R, fast_len, slow_len, sig_len)
+            if setting not in self.kalman_mtf_macd_settings:
+                self.kalman_mtf_macd_settings.append(setting)
+
+            # 대상 시간틀 데이터 자동 다운로드 및 캐시
+            cache_file = TIMEFRAME_CONFIG[self.current_timeframe]['cache']
+            import os
+            start_ms = getattr(self, 'last_start_ms', None)
+            end_ms = getattr(self, 'last_end_ms', None)
+
+            if start_ms is None or end_ms is None:
+                if os.path.exists(cache_file):
+                    df_curr = pd.read_csv(cache_file)
+                    if not df_curr.empty:
+                        start_ms = int(df_curr['timestamp'].min())
+                        end_ms = int(df_curr['timestamp'].max())
+
+            if start_ms is not None and end_ms is not None:
+                # EMA 웜업용 기간 확보
+                warmup_bars = (slow_len + sig_len) * 4
+                target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+                start_download_ms = start_ms - (target_ms * warmup_bars)
+                end_download_ms = end_ms
+
+                self.setWindowTitle(f"Binance Futures BTC - 대상 시간틀({tf_key}) 데이터 확인/다운로드 중...")
+                QApplication.processEvents()
+
+                self.download_data(start_download_ms, end_download_ms, timeframe=tf_key, quiet=True)
+
+                self.setWindowTitle("Binance Futures BTC OHLCV Downloader")
+                QApplication.processEvents()
+
+            if use_ls:
+                self.apply_kalman_mtf_macd_ls_labeling(tf_key, Q, R, fast_len, slow_len, sig_len)
+            else:
+                if hasattr(self, 'current_df') and not self.current_df.empty:
+                    self.populate_ui(self.current_df)
+
+    def apply_kalman_mtf_macd_ls_labeling(self, tf_key, Q, R, fast_len, slow_len, sig_len):
+        import os
+        cache_file = TIMEFRAME_CONFIG[self.current_timeframe]['cache']
+        target_cache_file = TIMEFRAME_CONFIG[tf_key]['cache']
+
+        if not os.path.exists(cache_file):
+            QMessageBox.warning(self, "오류", "현재 타임프레임의 캐시 파일이 없습니다.")
+            return
+        if not os.path.exists(target_cache_file):
+            QMessageBox.warning(self, "오류", f"대상 타임프레임({tf_key})의 캐시 파일이 없습니다. 먼저 해당 데이터를 받아오세요.")
+            return
+
+        self.setWindowTitle(f"Binance Futures BTC - Kalman MTF MACD({tf_key}) 라벨링 중...")
+        QApplication.processEvents()
+
+        try:
+            df_curr = pd.read_csv(cache_file)
+            df_target = pd.read_csv(target_cache_file)
+
+            macd_line, sig_line, _ = self.calculate_kalman_macd(
+                df_target['close'], Q, R, fast_len, slow_len, sig_len)
+            df_target['k_mtf_macd'] = macd_line
+            df_target['k_mtf_sig'] = sig_line
+
+            # 완성된 캔들만 사용하기 위해 타임스탬프를 캔들 종료 시점으로 이동 (Lookahead Bias 방지)
+            target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+            df_target['timestamp_shifted'] = df_target['timestamp'] + target_ms
+
+            df_curr_sorted = df_curr.sort_values('timestamp')
+            df_target_sorted = df_target[['timestamp_shifted', 'k_mtf_macd', 'k_mtf_sig']].sort_values('timestamp_shifted')
+
+            merged = pd.merge_asof(
+                df_curr_sorted,
+                df_target_sorted,
+                left_on='timestamp',
+                right_on='timestamp_shifted',
+                direction='backward'
+            )
+
+            labels = np.where(merged['k_mtf_macd'] > merged['k_mtf_sig'], 1, -1)
+            labels[merged['k_mtf_macd'].isna() | merged['k_mtf_sig'].isna()] = 0
+
+            df_curr['ls_label'] = labels
+            df_curr.to_csv(cache_file, index=False)
+
+            QMessageBox.information(self, "라벨링 완료",
+                                    f"Kalman MTF MACD({tf_key}, Q={Q}, R={R}, {fast_len}/{slow_len}/{sig_len}) 기준으로 "
+                                    f"LS 라벨 갱신 완료\n"
+                                    f"Long: {(labels==1).sum()}개, Short: {(labels==-1).sum()}개")
+
+            if hasattr(self, 'last_start_ms') and hasattr(self, 'last_end_ms'):
+                self.download_data(self.last_start_ms, self.last_end_ms, self.current_timeframe)
+
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"라벨링 중 오류 발생: {str(e)}")
+        finally:
+            self.setWindowTitle("Binance Futures BTC OHLCV Downloader")
+
+    def get_kalman_mtf_macd_for_df(self, plot_df, tf_key, Q, R, fast_len, slow_len, sig_len):
+        """차트 표시용: 상위 타임프레임에서 Kalman MACD를 계산하여 하위 타임프레임에 매핑"""
+        import os
+        target_cache_file = TIMEFRAME_CONFIG[tf_key]['cache']
+        if not os.path.exists(target_cache_file):
+            return None, None, None
+
+        df_target = pd.read_csv(target_cache_file)
+        if df_target.empty:
+            return None, None, None
+
+        macd_line, sig_line, hist = self.calculate_kalman_macd(
+            df_target['close'], Q, R, fast_len, slow_len, sig_len)
+        df_target['k_mtf_macd'] = macd_line
+        df_target['k_mtf_sig'] = sig_line
+        df_target['k_mtf_hist'] = hist
+
+        # 완성된 캔들만 사용하기 위해 타임스탬프를 캔들 종료 시점으로 이동 (Lookahead Bias 방지)
+        target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+        df_target['timestamp_dt'] = pd.to_datetime(df_target['timestamp'] + target_ms, unit='ms') + pd.Timedelta(hours=9)
+
+        temp_df = plot_df.copy().reset_index()
+        temp_df_sorted = temp_df.sort_values('timestamp')
+        df_target_sorted = df_target[['timestamp_dt', 'k_mtf_macd', 'k_mtf_sig', 'k_mtf_hist']].sort_values('timestamp_dt')
+
+        merged = pd.merge_asof(
+            temp_df_sorted,
+            df_target_sorted,
+            left_on='timestamp',
+            right_on='timestamp_dt',
+            direction='backward'
+        )
+        merged.set_index('timestamp', inplace=True)
+        return merged['k_mtf_macd'], merged['k_mtf_sig'], merged['k_mtf_hist']
+
+    def calculate_stoch_rsi(self, series, rsi_len, stoch_len, k_len, d_len):
+        delta = series.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        
+        avg_gain = gain.ewm(alpha=1/rsi_len, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1/rsi_len, adjust=False).mean()
+        
+        rs = avg_gain / (avg_loss + 1e-9)
+        rsi = 100 - (100 / (1 + rs))
+        
+        min_rsi = rsi.rolling(window=stoch_len).min()
+        max_rsi = rsi.rolling(window=stoch_len).max()
+        
+        stoch = 100 * (rsi - min_rsi) / (max_rsi - min_rsi + 1e-9)
+        
+        k = stoch.rolling(window=k_len).mean()
+        d = k.rolling(window=d_len).mean()
+        
+        return k, d
+
+    def get_mtf_stoch_rsi_for_df(self, plot_df, tf_key, rsi_len, stoch_len, k_len, d_len):
+        import os
+        target_cache_file = TIMEFRAME_CONFIG[tf_key]['cache']
+        if not os.path.exists(target_cache_file):
+            return None, None
+            
+        df_target = pd.read_csv(target_cache_file)
+        if df_target.empty:
+            return None, None
+            
+        k_line, d_line = self.calculate_stoch_rsi(df_target['close'], rsi_len, stoch_len, k_len, d_len)
+        df_target['mtf_k'] = k_line
+        df_target['mtf_d'] = d_line
+        
+        target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+        df_target['timestamp_dt'] = pd.to_datetime(df_target['timestamp'] + target_ms, unit='ms') + pd.Timedelta(hours=9)
+        
+        temp_df = plot_df.copy().reset_index()
+        temp_df_sorted = temp_df.sort_values('timestamp')
+        df_target_sorted = df_target[['timestamp_dt', 'mtf_k', 'mtf_d']].sort_values('timestamp_dt')
+        
+        merged = pd.merge_asof(
+            temp_df_sorted,
+            df_target_sorted,
+            left_on='timestamp',
+            right_on='timestamp_dt',
+            direction='backward'
+        )
+        merged.set_index('timestamp', inplace=True)
+        return merged['mtf_k'], merged['mtf_d']
+
+    def open_mtf_stoch_rsi_dialog(self):
+        dialog = MtfStochRsiDialog(self, current_tf=self.current_timeframe)
+        if dialog.exec():
+            tf_key, rsi_len, stoch_len, k_len, d_len, use_ls = dialog.get_settings()
+            setting = (tf_key, rsi_len, stoch_len, k_len, d_len)
+            if setting not in self.mtf_stoch_rsi_settings:
+                self.mtf_stoch_rsi_settings.append(setting)
+            
+            cache_file = TIMEFRAME_CONFIG[self.current_timeframe]['cache']
+            import os
+            start_ms = getattr(self, 'last_start_ms', None)
+            end_ms = getattr(self, 'last_end_ms', None)
+            
+            if start_ms is None or end_ms is None:
+                if os.path.exists(cache_file):
+                    df_curr = pd.read_csv(cache_file)
+                    if not df_curr.empty:
+                        start_ms = int(df_curr['timestamp'].min())
+                        end_ms = int(df_curr['timestamp'].max())
+            
+            if start_ms is not None and end_ms is not None:
+                warmup_bars = max(rsi_len, stoch_len, k_len, d_len) * 4
+                target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+                start_download_ms = start_ms - (target_ms * warmup_bars)
+                end_download_ms = end_ms
+                
+                self.setWindowTitle(f"Binance Futures BTC - 대상 시간틀({tf_key}) 데이터 확인/다운로드 중...")
+                QApplication.processEvents()
+                
+                self.download_data(start_download_ms, end_download_ms, timeframe=tf_key, quiet=True)
+                
+                self.setWindowTitle("Binance Futures BTC OHLCV Downloader")
+                QApplication.processEvents()
+            
+            if use_ls:
+                self.apply_mtf_stoch_rsi_ls_labeling(tf_key, rsi_len, stoch_len, k_len, d_len)
+            else:
+                if hasattr(self, 'current_df') and not self.current_df.empty:
+                    self.populate_ui(self.current_df)
+
+    def apply_mtf_stoch_rsi_ls_labeling(self, tf_key, rsi_len, stoch_len, k_len, d_len):
+        import os
+        cache_file = TIMEFRAME_CONFIG[self.current_timeframe]['cache']
+        target_cache_file = TIMEFRAME_CONFIG[tf_key]['cache']
+        
+        if not os.path.exists(cache_file):
+            QMessageBox.warning(self, "오류", "현재 타임프레임의 캐시 파일이 없습니다.")
+            return
+        if not os.path.exists(target_cache_file):
+            QMessageBox.warning(self, "오류", f"대상 타임프레임({tf_key})의 캐시 파일이 없습니다. 먼저 해당 데이터를 받아오세요.")
+            return
+
+        self.setWindowTitle(f"Binance Futures BTC - MTF Stoch RSI({tf_key}) 라벨링 중...")
+        QApplication.processEvents()
+
+        try:
+            df_curr = pd.read_csv(cache_file)
+            df_target = pd.read_csv(target_cache_file)
+            
+            k_line, d_line = self.calculate_stoch_rsi(df_target['close'], rsi_len, stoch_len, k_len, d_len)
+            df_target['mtf_k'] = k_line
+            df_target['mtf_d'] = d_line
+            
+            target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+            df_target['timestamp_shifted'] = df_target['timestamp'] + target_ms
+            
+            df_curr_sorted = df_curr.sort_values('timestamp')
+            df_target_sorted = df_target[['timestamp_shifted', 'mtf_k', 'mtf_d']].sort_values('timestamp_shifted')
+            
+            merged = pd.merge_asof(
+                df_curr_sorted,
+                df_target_sorted,
+                left_on='timestamp',
+                right_on='timestamp_shifted',
+                direction='backward'
+            )
+            
+            # K 크로스 D 전략 (과매수/과매도 구간 크로스오버 유지)
+            k = merged['mtf_k'].values
+            d = merged['mtf_d'].values
+            
+            prev_k = np.roll(k, 1)
+            prev_k[0] = np.nan
+            prev_d = np.roll(d, 1)
+            prev_d[0] = np.nan
+            
+            golden_cross = (prev_k <= prev_d) & (k > d)
+            dead_cross = (prev_k >= prev_d) & (k < d)
+            
+            long_signal = golden_cross & ((k <= 20) | (prev_k <= 20))
+            short_signal = dead_cross & ((k >= 80) | (prev_k >= 80))
+            
+            signal_series = pd.Series(0, index=merged.index)
+            signal_series.loc[long_signal] = 1
+            signal_series.loc[short_signal] = -1
+            
+            signal_series = signal_series.replace(0, np.nan)
+            if pd.isna(signal_series.iloc[0]):
+                signal_series.iloc[0] = 0
+                
+            labels = signal_series.ffill().fillna(0).astype(int).values
+            labels[np.isnan(k) | np.isnan(d)] = 0
+            
+            df_curr['ls_label'] = labels
+            df_curr.to_csv(cache_file, index=False)
+
+            QMessageBox.information(self, "라벨링 완료",
+                                    f"MTF Stoch RSI({tf_key}) 기준으로 "
+                                    f"LS 라벨 갱신 완료\n"
+                                    f"Long: {(labels==1).sum()}개, Short: {(labels==-1).sum()}개")
+
+            if hasattr(self, 'last_start_ms') and hasattr(self, 'last_end_ms'):
+                self.download_data(self.last_start_ms, self.last_end_ms, self.current_timeframe)
+
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"라벨링 중 오류 발생: {str(e)}")
+        finally:
+            self.setWindowTitle("Binance Futures BTC OHLCV Downloader")
 
     def setup_statusbar(self):
         self.statusBar = QStatusBar()
@@ -1857,6 +2375,26 @@ class BinanceDataFetcher(QMainWindow):
                         start_download_ms = start_ms - (target_ms * warmup_bars)
                         end_download_ms = end_ms
                         self.download_data(start_download_ms, end_download_ms, timeframe=tf_key, quiet=True)
+
+            # 활성화된 칼만 MTF MACD 설정이 있다면 해당 대상 시간틀 데이터도 자동으로 받아두기
+            if not quiet and hasattr(self, 'kalman_mtf_macd_settings') and self.kalman_mtf_macd_settings:
+                for (tf_key, Q, R, fast_len, slow_len, sig_len) in self.kalman_mtf_macd_settings:
+                    if tf_key != timeframe:
+                        warmup_bars = (slow_len + sig_len) * 4
+                        target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+                        start_download_ms = start_ms - (target_ms * warmup_bars)
+                        end_download_ms = end_ms
+                        self.download_data(start_download_ms, end_download_ms, timeframe=tf_key, quiet=True)
+
+            # 활성화된 MTF Stoch RSI 설정이 있다면 해당 대상 시간틀 데이터도 자동으로 받아두기
+            if not quiet and hasattr(self, 'mtf_stoch_rsi_settings') and self.mtf_stoch_rsi_settings:
+                for (tf_key, rsi_len, stoch_len, k_len, d_len) in self.mtf_stoch_rsi_settings:
+                    if tf_key != timeframe:
+                        warmup_bars = max(rsi_len, stoch_len, k_len, d_len) * 4
+                        target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+                        start_download_ms = start_ms - (target_ms * warmup_bars)
+                        end_download_ms = end_ms
+                        self.download_data(start_download_ms, end_download_ms, timeframe=tf_key, quiet=True)
                 
         except Exception as e:
             if not quiet:
@@ -1907,6 +2445,8 @@ class BinanceDataFetcher(QMainWindow):
         has_sqz = bool(self.squeeze_settings)
         has_wt = bool(self.wavetrend_settings)
         has_macd = bool(self.mtf_macd_settings)
+        has_kalman_macd = bool(self.kalman_mtf_macd_settings)
+        has_stoch_rsi = bool(self.mtf_stoch_rsi_settings)
         
         total_panels = 1
         height_ratios = [3]
@@ -1920,6 +2460,12 @@ class BinanceDataFetcher(QMainWindow):
             total_panels += 1
             height_ratios.append(1)
         if has_macd:
+            total_panels += 1
+            height_ratios.append(1)
+        if has_kalman_macd:
+            total_panels += 1
+            height_ratios.append(1)
+        if has_stoch_rsi:
             total_panels += 1
             height_ratios.append(1)
             
@@ -1953,6 +2499,18 @@ class BinanceDataFetcher(QMainWindow):
             current_panel_idx += 1
         else:
             ax_macd = None
+
+        if has_kalman_macd:
+            ax_kalman_macd = self.fig.add_subplot(gs[current_panel_idx], sharex=ax)
+            current_panel_idx += 1
+        else:
+            ax_kalman_macd = None
+
+        if has_stoch_rsi:
+            ax_stoch_rsi = self.fig.add_subplot(gs[current_panel_idx], sharex=ax)
+            current_panel_idx += 1
+        else:
+            ax_stoch_rsi = None
 
         # 한국인에게 친숙한 색상 (상승: 빨강, 하락: 파랑)
         mc = mpf.make_marketcolors(up='red', down='blue', edge='inherit', wick='inherit')
@@ -2122,6 +2680,50 @@ class BinanceDataFetcher(QMainWindow):
                 ax_macd.legend(fontsize=7, loc='upper left')
                 ax_macd.grid(axis='both', linestyle='--', linewidth=0.4, alpha=0.6)
 
+        # Kalman MTF MACD 패널 렌더링
+        if ax_kalman_macd is not None:
+            for (tf_key, Q, R, fast_len, slow_len, sig_len) in self.kalman_mtf_macd_settings:
+                k_macd, k_sig, k_hist = self.get_kalman_mtf_macd_for_df(
+                    plot_df, tf_key, Q, R, fast_len, slow_len, sig_len)
+                if k_macd is None or k_macd.isna().all():
+                    continue
+                ax_kalman_macd.plot(x_nums, k_macd.values, color='#7c4dff', linewidth=1.2,
+                                   label=f'K-MACD ({tf_key})')
+                ax_kalman_macd.plot(x_nums, k_sig.values, color='#ff6d00', linewidth=1.2,
+                                   label=f'K-Signal ({tf_key})')
+
+                hist_vals = k_hist.values
+                hist_colors = np.where(hist_vals >= 0, '#26a69a', '#ef5350')
+                ax_kalman_macd.bar(x_nums, hist_vals, width=bar_width,
+                                   color=hist_colors, align='center', alpha=0.5)
+
+                ax_kalman_macd.axhline(y=0, color='#888888', linewidth=0.5)
+                ax_kalman_macd.set_ylabel(f'Kalman MACD ({tf_key})', fontsize=8)
+                ax_kalman_macd.legend(fontsize=7, loc='upper left')
+                ax_kalman_macd.grid(axis='both', linestyle='--', linewidth=0.4, alpha=0.6)
+
+        # MTF Stoch RSI 패널 렌더링
+        if ax_stoch_rsi is not None:
+            for (tf_key, rsi_len, stoch_len, k_len, d_len) in self.mtf_stoch_rsi_settings:
+                k_line, d_line = self.get_mtf_stoch_rsi_for_df(plot_df, tf_key, rsi_len, stoch_len, k_len, d_len)
+                if k_line is None or k_line.isna().all():
+                    continue
+                ax_stoch_rsi.plot(x_nums, k_line.values, color='#2196f3', linewidth=1.2, label=f'K ({tf_key})')
+                ax_stoch_rsi.plot(x_nums, d_line.values, color='#ff9800', linewidth=1.2, label=f'D ({tf_key})')
+                
+                # Overbought / Oversold zones
+                ax_stoch_rsi.axhline(y=80, color='#ef5350', linestyle='--', linewidth=0.8, alpha=0.7)
+                ax_stoch_rsi.axhline(y=20, color='#26a69a', linestyle='--', linewidth=0.8, alpha=0.7)
+                
+                valid = ~np.isnan(k_line.values)
+                ax_stoch_rsi.fill_between(x_nums, k_line.values, 80, where=valid & (k_line.values >= 80), color='#ef5350', alpha=0.2)
+                ax_stoch_rsi.fill_between(x_nums, k_line.values, 20, where=valid & (k_line.values <= 20), color='#26a69a', alpha=0.2)
+                
+                ax_stoch_rsi.set_ylim(-5, 105)
+                ax_stoch_rsi.set_ylabel(f'Stoch RSI ({tf_key})', fontsize=8)
+                ax_stoch_rsi.legend(fontsize=7, loc='upper left')
+                ax_stoch_rsi.grid(axis='both', linestyle='--', linewidth=0.4, alpha=0.6)
+
         # 사용자 맞춤형 X축 날짜/시간 포매터 정의
         import matplotlib.ticker as ticker
         class CustomDateFormatter(ticker.Formatter):
@@ -2150,6 +2752,10 @@ class BinanceDataFetcher(QMainWindow):
             sub_axes.append(ax_wt)
         if ax_macd is not None:
             sub_axes.append(ax_macd)
+        if ax_kalman_macd is not None:
+            sub_axes.append(ax_kalman_macd)
+        if ax_stoch_rsi is not None:
+            sub_axes.append(ax_stoch_rsi)
             
         import matplotlib.pyplot as plt
         

@@ -526,10 +526,13 @@ function getJson(url) {
 }
 
 const klineHistories = {};
+const klineHistoriesMTF = {};
 
 async function initKlineHistories() {
     for (const rawSymbol of SYMBOLS_TO_STREAM) {
         const symbol = rawSymbol.toUpperCase();
+        klineHistoriesMTF[symbol] = {};
+
         const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1m&limit=1000`;
         try {
             const data = await getJson(url);
@@ -544,6 +547,24 @@ async function initKlineHistories() {
         } catch (e) {
             console.error(`[Init] Failed to load klines for ${symbol}:`, e.message);
             klineHistories[symbol] = [];
+        }
+
+        const mtfList = ['3m', '5m', '15m', '30m', '1h', '4h', '1d'];
+        for (const tf of mtfList) {
+            const mtfUrl = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${tf}&limit=1000`;
+            try {
+                const data = await getJson(mtfUrl);
+                klineHistoriesMTF[symbol][tf] = data.map(d => ({
+                    time: Math.floor(d[0] / 1000),
+                    open: parseFloat(d[1]),
+                    high: parseFloat(d[2]),
+                    low: parseFloat(d[3]),
+                    close: parseFloat(d[4])
+                }));
+            } catch (e) {
+                console.error(`[Init] Failed to load ${tf} klines for ${symbol}:`, e.message);
+                klineHistoriesMTF[symbol][tf] = [];
+            }
         }
     }
 }
@@ -608,7 +629,7 @@ function calculateWaveTrend(formattedData, n1, n2, sigLen) {
     return { wt1Data, wt2Data };
 }
 
-function aggregateKlines(history, timeframe) {
+function aggregateKlines(history, timeframe, symbol = null) {
     const tfMap = {
         '1m': 60,
         '3m': 180,
@@ -648,6 +669,14 @@ function aggregateKlines(history, timeframe) {
             close
         });
     }
+
+    if (symbol && timeframe !== '1m' && typeof klineHistoriesMTF !== 'undefined' && klineHistoriesMTF[symbol] && klineHistoriesMTF[symbol][timeframe]) {
+        const mtfHistory = klineHistoriesMTF[symbol][timeframe];
+        const firstAggTime = aggregated.length > 0 ? aggregated[0].time : Infinity;
+        const merged = mtfHistory.filter(k => k.time < firstAggTime);
+        return merged.concat(aggregated);
+    }
+
     return aggregated;
 }
 
@@ -1020,7 +1049,7 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
 
                 if (!isClosed && !allowRepaint) return; // 리페인팅 미허용 시 미마감 캔들 무시
 
-                const aggregated = aggregateKlines(history, tf);
+                const aggregated = aggregateKlines(history, tf, symbol);
                 const macdResult = calculateMACDForKlines(aggregated, fast, slow, sig);
                 
                 const currentTick = history[history.length - 1];
@@ -1076,7 +1105,7 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
 
                 if (!isClosed && !allowRepaint) return; // ignore uncompleted candles if repaint is not allowed
 
-                const aggregated = aggregateKlines(history, tf);
+                const aggregated = aggregateKlines(history, tf, symbol);
                 const stochResult = calculateStochRSI(aggregated, rsiPeriod, stochPeriod, kPeriod, dPeriod);
                 
                 const currentTick = history[history.length - 1];
