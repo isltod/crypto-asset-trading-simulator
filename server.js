@@ -353,7 +353,13 @@ app.get(`${BASE_PATH}/api/proxy/klines`, async (req, res) => {
     const symbol = req.query.symbol || 'BTCUSDT';
     const interval = req.query.interval || '1m';
     const limit = req.query.limit || 1000;
-    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+    if (req.query.endTime) {
+        url += `&endTime=${req.query.endTime}`;
+    }
+    if (req.query.startTime) {
+        url += `&startTime=${req.query.startTime}`;
+    }
     try {
         const data = await getJson(url);
         res.json(data);
@@ -1145,11 +1151,11 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                             prevK !== undefined && prevD !== undefined && currK !== undefined && currD !== undefined) {
                             
                             // Golden cross in oversold area (<= 20)
-                            if (prevK < prevD && currK > currD && (currK <= 20 || currD <= 20)) {
+                            if (prevK <= prevD && currK > currD && (currK <= 20 || prevK <= 20)) {
                                 signal = 'LONG';
                             }
                             // Dead cross in overbought area (>= 80)
-                            else if (prevK > prevD && currK < currD && (currK >= 80 || currD >= 80)) {
+                            else if (prevK >= prevD && currK < currD && (currK >= 80 || prevK >= 80)) {
                                 signal = 'SHORT';
                             }
                         }

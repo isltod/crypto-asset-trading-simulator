@@ -568,7 +568,7 @@ function applyIndicatorMarkers() {
 
             const time = formattedData[i].time;
 
-            if (prevK < prevD && currK > currD && (currK <= 20 || currD <= 20)) {
+            if (prevK <= prevD && currK > currD && (currK <= 20 || prevK <= 20)) {
                 markers.push({
                     time: time,
                     position: 'belowBar',
@@ -585,7 +585,7 @@ function applyIndicatorMarkers() {
                     text: 'L',
                     size: 1
                 });
-            } else if (prevK > prevD && currK < currD && (currK >= 80 || currD >= 80)) {
+            } else if (prevK >= prevD && currK < currD && (currK >= 80 || prevK >= 80)) {
                 markers.push({
                     time: time,
                     position: 'aboveBar',
@@ -1961,11 +1961,13 @@ async function loadChartData(symbol) {
         const data1 = await res1.json();
         
         let data = data1;
-        if (data1.length > 0) {
+        if (Array.isArray(data1) && data1.length > 0) {
             const endTime = data1[0][0] - 1;
             const res2 = await fetch(`${BINANCE_REST_URL}/klines?symbol=${symbol}&interval=1m&limit=1500&endTime=${endTime}`);
             const data2 = await res2.json();
-            data = data2.concat(data1);
+            if (Array.isArray(data2)) {
+                data = data2.concat(data1);
+            }
         }
 
         window.klineData = data.map(d => ({
