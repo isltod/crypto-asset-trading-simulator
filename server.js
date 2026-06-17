@@ -1190,11 +1190,14 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                             console.log(`[AutoTrade] User ${account.username} already has a ${signal} position on ${symbol}. Skipping.`);
                         } else {
                             console.log(`[AutoTrade] Opposite signal ${signal} detected. Closing current ${pos.side} position on ${symbol} for ${account.username}`);
+                            // openingUsers 잠금을 미리 해제하여 closePosition 완료 후 openPositionInternal이 즉시 실행될 수 있게 함
+                            openingUsers.delete(userId);
                             closePosition(userId, currentPrice, null, (success) => {
                                 if (success) {
-                                    setTimeout(() => {
-                                        openPositionInternal(userId, symbol, signal, currentPrice);
-                                    }, 500);
+                                    // setTimeout 제거: closePosition의 cb는 DELETE FROM positions 완료 후 호출되므로 즉시 진입 가능
+                                    openPositionInternal(userId, symbol, signal, currentPrice);
+                                } else {
+                                    console.log(`[AutoTrade] Failed to close position for user ${account.username}. New position not opened.`);
                                 }
                             });
                         }
