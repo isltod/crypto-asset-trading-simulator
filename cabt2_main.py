@@ -633,7 +633,7 @@ class MtfStochRsiDialog(QDialog):
     def __init__(self, parent=None, current_tf='1m'):
         super().__init__(parent)
         self.setWindowTitle("다중 타임프레임 Stochastic RSI 설정")
-        self.resize(320, 260)
+        self.resize(320, 340)
         
         layout = QVBoxLayout(self)
         
@@ -683,6 +683,22 @@ class MtfStochRsiDialog(QDialog):
         d_layout.addWidget(self.d_spin)
         layout.addLayout(d_layout)
         
+        ob_layout = QHBoxLayout()
+        ob_layout.addWidget(QLabel("과매수 레벨:"))
+        self.ob_spin = QSpinBox()
+        self.ob_spin.setRange(1, 100)
+        self.ob_spin.setValue(80)
+        ob_layout.addWidget(self.ob_spin)
+        layout.addLayout(ob_layout)
+        
+        os_layout = QHBoxLayout()
+        os_layout.addWidget(QLabel("과매도 레벨:"))
+        self.os_spin = QSpinBox()
+        self.os_spin.setRange(1, 100)
+        self.os_spin.setValue(20)
+        os_layout.addWidget(self.os_spin)
+        layout.addLayout(os_layout)
+        
         self.ls_checkbox = QCheckBox("LS 라벨링 적용")
         layout.addWidget(self.ls_checkbox)
         
@@ -693,8 +709,38 @@ class MtfStochRsiDialog(QDialog):
     def get_settings(self):
         return (self.tf_combo.currentData(), self.rsi_spin.value(),
                 self.stoch_spin.value(), self.k_spin.value(),
-                self.d_spin.value(), self.ls_checkbox.isChecked())
+                self.d_spin.value(), self.ob_spin.value(),
+                self.os_spin.value(), self.ls_checkbox.isChecked())
 
+
+
+class BacktestDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("백테스트 설정")
+        self.resize(300, 150)
+        
+        layout = QVBoxLayout(self)
+        
+        lev_layout = QHBoxLayout()
+        self.lev_label = QLabel("레버리지:")
+        self.lev_spinbox = QSpinBox()
+        self.lev_spinbox.setRange(1, 125)
+        self.lev_spinbox.setValue(1)
+        lev_layout.addWidget(self.lev_label)
+        lev_layout.addWidget(self.lev_spinbox)
+        layout.addLayout(lev_layout)
+        
+        self.save_csv_checkbox = QCheckBox("거래 내역 CSV 저장")
+        self.save_csv_checkbox.setChecked(True)
+        layout.addWidget(self.save_csv_checkbox)
+        
+        self.action_btn = QPushButton("백테스트 실행")
+        self.action_btn.clicked.connect(self.accept)
+        layout.addWidget(self.action_btn)
+        
+    def get_settings(self):
+        return self.lev_spinbox.value(), self.save_csv_checkbox.isChecked()
 
 
 import matplotlib
@@ -723,7 +769,7 @@ class BinanceDataFetcher(QMainWindow):
         self.wavetrend_settings = []     # [(ch_len, avg_len, ob_level, os_level), ...]
         self.mtf_macd_settings = []      # [(tf_key, fast_len, slow_len, sig_len), ...]
         self.kalman_mtf_macd_settings = [] # [(tf_key, Q, R, fast_len, slow_len, sig_len), ...]
-        self.mtf_stoch_rsi_settings = [] # [(tf_key, rsi_len, stoch_len, k_len, d_len), ...]
+        self.mtf_stoch_rsi_settings = [] # [(tf_key, rsi_len, stoch_len, k_len, d_len, ob_level, os_level), ...]
 
         # 현재 선택된 타임프레임 (기본값: 1분)
         self.current_timeframe = '1m'
@@ -1718,8 +1764,8 @@ class BinanceDataFetcher(QMainWindow):
     def open_mtf_stoch_rsi_dialog(self):
         dialog = MtfStochRsiDialog(self, current_tf=self.current_timeframe)
         if dialog.exec():
-            tf_key, rsi_len, stoch_len, k_len, d_len, use_ls = dialog.get_settings()
-            setting = (tf_key, rsi_len, stoch_len, k_len, d_len)
+            tf_key, rsi_len, stoch_len, k_len, d_len, ob_level, os_level, use_ls = dialog.get_settings()
+            setting = (tf_key, rsi_len, stoch_len, k_len, d_len, ob_level, os_level)
             if setting not in self.mtf_stoch_rsi_settings:
                 self.mtf_stoch_rsi_settings.append(setting)
             
@@ -1736,7 +1782,7 @@ class BinanceDataFetcher(QMainWindow):
                         end_ms = int(df_curr['timestamp'].max())
             
             if start_ms is not None and end_ms is not None:
-                warmup_bars = max(rsi_len, stoch_len, k_len, d_len) * 4
+                warmup_bars = max(1000, max(rsi_len, stoch_len, k_len, d_len) * 4)
                 target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
                 start_download_ms = start_ms - (target_ms * warmup_bars)
                 end_download_ms = end_ms
@@ -1750,12 +1796,12 @@ class BinanceDataFetcher(QMainWindow):
                 QApplication.processEvents()
             
             if use_ls:
-                self.apply_mtf_stoch_rsi_ls_labeling(tf_key, rsi_len, stoch_len, k_len, d_len)
+                self.apply_mtf_stoch_rsi_ls_labeling(tf_key, rsi_len, stoch_len, k_len, d_len, ob_level, os_level)
             else:
                 if hasattr(self, 'current_df') and not self.current_df.empty:
                     self.populate_ui(self.current_df)
 
-    def apply_mtf_stoch_rsi_ls_labeling(self, tf_key, rsi_len, stoch_len, k_len, d_len):
+    def apply_mtf_stoch_rsi_ls_labeling(self, tf_key, rsi_len, stoch_len, k_len, d_len, ob_level, os_level):
         import os
         cache_file = TIMEFRAME_CONFIG[self.current_timeframe]['cache']
         target_cache_file = TIMEFRAME_CONFIG[tf_key]['cache']
@@ -1804,8 +1850,10 @@ class BinanceDataFetcher(QMainWindow):
             golden_cross = (prev_k <= prev_d) & (k > d)
             dead_cross = (prev_k >= prev_d) & (k < d)
             
-            long_signal = golden_cross & ((k <= 20) | (prev_k <= 20))
-            short_signal = dead_cross & ((k >= 80) | (prev_k >= 80))
+            # K, D 모두 과매도 구간에서 골든크로스 → 롱
+            # K, D 모두 과매수 구간에서 데드크로스 → 숏
+            long_signal  = golden_cross & (((k <= os_level) & (d <= os_level)) | ((prev_k <= os_level) & (prev_d <= os_level)))
+            short_signal = dead_cross   & (((k >= ob_level) & (d >= ob_level)) | ((prev_k >= ob_level) & (prev_d >= ob_level)))
             
             signal_series = pd.Series(0, index=merged.index)
             signal_series.loc[long_signal] = 1
@@ -2098,6 +2146,12 @@ class BinanceDataFetcher(QMainWindow):
             QMessageBox.warning(self, "백테스트", "백테스트를 수행할 데이터가 없습니다.")
             return
 
+        dialog = BacktestDialog(self)
+        if not dialog.exec():
+            return
+            
+        leverage, save_csv = dialog.get_settings()
+
         import os
         try:
             # 규칙 1: capital 100으로 초기화
@@ -2107,41 +2161,127 @@ class BinanceDataFetcher(QMainWindow):
             balance = 100.0
             pos = 0          # 0: 없음, 1: Long, -1: Short
             entry_price = 0.0
+            entry_time = None
+            balance_before = 100.0
+            entry_fee = 0.0
+            trade_margin = 0.0
+            
+            trade_history = []
+            trade_highest = 0.0
+            trade_lowest = 0.0
 
             total_rows = len(df)
 
             # 규칙 2~6: 봉 단위 가상 거래 시뮬레이션
             for i in range(total_rows):
                 label      = int(df.iloc[i - 1]['ls_label']) if i > 0 else 0
-                # 이게 이렇게 한 시간 단위만 미래 오염이 발생해도 수익이 어마어마한데...
-                # label      = int(df.iloc[i]['ls_label']) if i > 0 else 0
                 open_price = float(df.iloc[i]['open'])
+                current_time = df.iloc[i]['timestamp']
 
                 # 규칙 5-4: 현재 포지션과 다른 label이 나타나면 청산만 수행
                 if pos != 0 and label != pos:
-                    balance *= (1 - fee_rate)          # 청산 수수료
                     if pos == 1:
-                        pnl = (open_price - entry_price) / entry_price
+                        pnl_raw = (open_price - entry_price) / entry_price
+                        max_profit_pct = (trade_highest - entry_price) / entry_price * 100 * leverage
+                        max_loss_pct = (trade_lowest - entry_price) / entry_price * 100 * leverage
                     else:  # pos == -1
-                        pnl = (entry_price - open_price) / entry_price
-                    balance *= (1 + pnl)
+                        pnl_raw = (entry_price - open_price) / entry_price
+                        max_profit_pct = (entry_price - trade_lowest) / entry_price * 100 * leverage
+                        max_loss_pct = (entry_price - trade_highest) / entry_price * 100 * leverage
+                        
+                    pnl_amount = trade_margin * leverage * pnl_raw
+                    nominal_close_size = trade_margin * leverage + pnl_amount
+                    if nominal_close_size < 0: nominal_close_size = 0
+                    exit_fee = nominal_close_size * fee_rate
+                    
+                    balance += pnl_amount
+                    balance -= exit_fee
+                    if balance < 0: balance = 0
+                    
+                    total_fee = entry_fee + exit_fee
+                    pnl_leveraged = pnl_amount / trade_margin if trade_margin > 0 else 0
+                    
+                    trade_history.append({
+                        "롱/숏 포지션": "Long" if pos == 1 else "Short",
+                        "레버리지": leverage,
+                        "진입 시간": entry_time,
+                        "청산 시간": current_time,
+                        "진입 가격": entry_price,
+                        "청산 가격": open_price,
+                        "pnl": pnl_leveraged,
+                        "roe": pnl_leveraged * 100,
+                        "거래 수수료": total_fee,
+                        "거래전 자산": balance_before,
+                        "거래 후 자산": balance,
+                        "최대 손실 (%)": max_loss_pct,
+                        "최대 이익 (%)": max_profit_pct
+                    })
                     pos = 0
 
                 # 규칙 5-2/5-3: 포지션이 없고 label이 있으면 진입
                 if pos == 0 and label != 0:
                     pos = label
                     entry_price = open_price
-                    balance *= (1 - fee_rate)          # 진입 수수료
+                    entry_time = current_time
+                    balance_before = balance
+                    
+                    nominal_size = balance * leverage
+                    entry_fee = nominal_size * fee_rate
+                    balance -= entry_fee
+                    trade_margin = balance
+                    
+                    curr_high = float(df.iloc[i]['high'])
+                    curr_low = float(df.iloc[i]['low'])
+                    trade_highest = curr_high
+                    trade_lowest = curr_low
+                elif pos != 0:
+                    # 포지션 유지중인 경우 현재 봉의 high/low 반영
+                    curr_high = float(df.iloc[i]['high'])
+                    curr_low = float(df.iloc[i]['low'])
+                    if curr_high > trade_highest:
+                        trade_highest = curr_high
+                    if curr_low < trade_lowest:
+                        trade_lowest = curr_low
 
                 # 규칙 5-5: 마지막 봉에 포지션이 남아 있으면 close로 청산
                 if i == total_rows - 1 and pos != 0:
                     close_price = float(df.iloc[i]['close'])
-                    balance *= (1 - fee_rate)          # 청산 수수료
                     if pos == 1:
-                        pnl = (close_price - entry_price) / entry_price
+                        pnl_raw = (close_price - entry_price) / entry_price
+                        max_profit_pct = (trade_highest - entry_price) / entry_price * 100 * leverage
+                        max_loss_pct = (trade_lowest - entry_price) / entry_price * 100 * leverage
                     else:
-                        pnl = (entry_price - close_price) / entry_price
-                    balance *= (1 + pnl)
+                        pnl_raw = (entry_price - close_price) / entry_price
+                        max_profit_pct = (entry_price - trade_lowest) / entry_price * 100 * leverage
+                        max_loss_pct = (entry_price - trade_highest) / entry_price * 100 * leverage
+                        
+                    pnl_amount = trade_margin * leverage * pnl_raw
+                    nominal_close_size = trade_margin * leverage + pnl_amount
+                    if nominal_close_size < 0: nominal_close_size = 0
+                    exit_fee = nominal_close_size * fee_rate
+                    
+                    balance += pnl_amount
+                    balance -= exit_fee
+                    if balance < 0: balance = 0
+                    
+                    total_fee = entry_fee + exit_fee
+                    pnl_leveraged = pnl_amount / trade_margin if trade_margin > 0 else 0
+                    
+                    trade_history.append({
+                        "롱/숏 포지션": "Long" if pos == 1 else "Short",
+                        "레버리지": leverage,
+                        "진입 시간": entry_time,
+                        "청산 시간": current_time,
+                        "진입 가격": entry_price,
+                        "청산 가격": close_price,
+                        "pnl": pnl_leveraged,
+                        "roe": pnl_leveraged * 100,
+                        "거래 수수료": total_fee,
+                        "거래전 자산": balance_before,
+                        "거래 후 자산": balance,
+                        "최대 손실 (%)": max_loss_pct,
+                        "최대 이익 (%)": max_profit_pct
+                    })
                     pos = 0
 
                 # 규칙 6: 매 봉 capital 기록
@@ -2151,17 +2291,6 @@ class BinanceDataFetcher(QMainWindow):
             cache_file = TIMEFRAME_CONFIG[self.current_timeframe]['cache']
             if os.path.exists(cache_file):
                 full_cache = pd.read_csv(cache_file)
-                # 현재 표시된 구간의 데이터만 업데이트 (Timestamp 기준)
-                # timestamp가 datetime 객체이므로 다시 ms로 변환하여 매칭 (또는 index 매칭)
-                # populate_ui에서 변환한 형식을 고려하여 매칭 진행
-                
-                # 원본 캐시 데이터의 타임스탬프와 일치시키기 위해 ms 단위로 변환
-                # (KST 변환 전의 원본 ms 타임스탬프가 필요함. current_df 생성 시의 정보를 활용)
-                
-                # 더 안전한 방법: current_df에 있는 원본 timestamp(ms)를 사용하여 매치
-                # display_df 생성 시 copy() 했으므로, 원본 ms 값이 소실되었을 수 있음.
-                # 다시 확인: download_data에서 display_df 생성 후 timestamp를 datetime으로 변환함.
-                # 따라서 datetime을 다시 ms로 역변환하여 매칭.
                 
                 # KST(UTC+9)이므로 9시간을 빼고 ms로 변환
                 df_to_save = df.copy()
@@ -2169,21 +2298,28 @@ class BinanceDataFetcher(QMainWindow):
                 
                 # full_cache의 해당 timestamp 행들의 capital 업데이트
                 full_cache.set_index('timestamp', inplace=True)
-                # map을 사용하거나 update 사용
                 updates = df_to_save.set_index('timestamp_ms')['capital']
                 full_cache.update(updates.to_frame())
                 full_cache.reset_index(inplace=True)
                 full_cache.to_csv(cache_file, index=False)
+            
+            if save_csv and trade_history:
+                history_df = pd.DataFrame(trade_history)
+                timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                history_file = f"backtest_history_{timestamp_str}.csv"
+                history_df.to_csv(history_file, index=False, encoding='utf-8-sig')
             
             # 4. UI 갱신 (테이블 등)
             self.populate_ui(df)
             
             final_capital = df.iloc[-1]['capital']
             roi = (final_capital - 100.0)
-            QMessageBox.information(self, "백테스트 완료", 
-                                    f"백테스트가 완료되었습니다.\n"
-                                    f"최종 자산: {final_capital:.2f} USDT\n"
-                                    f"수익률: {roi:.2f}%")
+            
+            msg = f"백테스트가 완료되었습니다.\n최종 자산: {final_capital:.2f} USDT\n수익률: {roi:.2f}%"
+            if save_csv and trade_history:
+                msg += f"\n\n거래 내역이 '{history_file}'에 저장되었습니다."
+                
+            QMessageBox.information(self, "백테스트 완료", msg)
             
         except Exception as e:
             QMessageBox.critical(self, "오류", f"백테스트 중 오류 발생: {str(e)}")
@@ -2388,9 +2524,9 @@ class BinanceDataFetcher(QMainWindow):
 
             # 활성화된 MTF Stoch RSI 설정이 있다면 해당 대상 시간틀 데이터도 자동으로 받아두기
             if not quiet and hasattr(self, 'mtf_stoch_rsi_settings') and self.mtf_stoch_rsi_settings:
-                for (tf_key, rsi_len, stoch_len, k_len, d_len) in self.mtf_stoch_rsi_settings:
+                for (tf_key, rsi_len, stoch_len, k_len, d_len, ob_level, os_level) in self.mtf_stoch_rsi_settings:
                     if tf_key != timeframe:
-                        warmup_bars = max(rsi_len, stoch_len, k_len, d_len) * 4
+                        warmup_bars = max(1000, max(rsi_len, stoch_len, k_len, d_len) * 4)
                         target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
                         start_download_ms = start_ms - (target_ms * warmup_bars)
                         end_download_ms = end_ms
@@ -2704,7 +2840,7 @@ class BinanceDataFetcher(QMainWindow):
 
         # MTF Stoch RSI 패널 렌더링
         if ax_stoch_rsi is not None:
-            for (tf_key, rsi_len, stoch_len, k_len, d_len) in self.mtf_stoch_rsi_settings:
+            for (tf_key, rsi_len, stoch_len, k_len, d_len, ob_level, os_level) in self.mtf_stoch_rsi_settings:
                 k_line, d_line = self.get_mtf_stoch_rsi_for_df(plot_df, tf_key, rsi_len, stoch_len, k_len, d_len)
                 if k_line is None or k_line.isna().all():
                     continue
@@ -2712,12 +2848,12 @@ class BinanceDataFetcher(QMainWindow):
                 ax_stoch_rsi.plot(x_nums, d_line.values, color='#ff9800', linewidth=1.2, label=f'D ({tf_key})')
                 
                 # Overbought / Oversold zones
-                ax_stoch_rsi.axhline(y=80, color='#ef5350', linestyle='--', linewidth=0.8, alpha=0.7)
-                ax_stoch_rsi.axhline(y=20, color='#26a69a', linestyle='--', linewidth=0.8, alpha=0.7)
+                ax_stoch_rsi.axhline(y=ob_level, color='#ef5350', linestyle='--', linewidth=0.8, alpha=0.7)
+                ax_stoch_rsi.axhline(y=os_level, color='#26a69a', linestyle='--', linewidth=0.8, alpha=0.7)
                 
                 valid = ~np.isnan(k_line.values)
-                ax_stoch_rsi.fill_between(x_nums, k_line.values, 80, where=valid & (k_line.values >= 80), color='#ef5350', alpha=0.2)
-                ax_stoch_rsi.fill_between(x_nums, k_line.values, 20, where=valid & (k_line.values <= 20), color='#26a69a', alpha=0.2)
+                ax_stoch_rsi.fill_between(x_nums, k_line.values, ob_level, where=valid & (k_line.values >= ob_level), color='#ef5350', alpha=0.2)
+                ax_stoch_rsi.fill_between(x_nums, k_line.values, os_level, where=valid & (k_line.values <= os_level), color='#26a69a', alpha=0.2)
                 
                 ax_stoch_rsi.set_ylim(-5, 105)
                 ax_stoch_rsi.set_ylabel(f'Stoch RSI ({tf_key})', fontsize=8)
