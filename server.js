@@ -1150,13 +1150,21 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                         if (prevK !== null && prevD !== null && currK !== null && currD !== null &&
                             prevK !== undefined && prevD !== undefined && currK !== undefined && currD !== undefined) {
                             
-                            // Golden cross in oversold area (<= 20)
-                            if (prevK <= prevD && currK > currD && (currK <= 20 || prevK <= 20)) {
+                            const tCurrStr = new Date(tStartCurr * 1000).toISOString();
+                            const tPrevStr = new Date(tStartPrev * 1000).toISOString();
+                            console.log(`[StochRSI-Debug] ${symbol} tf=${tf} | prevCandle=${tPrevStr} prevK=${prevK?.toFixed(2)} prevD=${prevD?.toFixed(2)} | currCandle=${tCurrStr} currK=${currK?.toFixed(2)} currD=${currD?.toFixed(2)}`);
+
+                            // Golden cross: both K and D must be in the oversold zone (<= 20)
+                            if (prevK <= prevD && currK > currD &&
+                                ((currK <= 20 && currD <= 20) || (prevK <= 20 && prevD <= 20))) {
                                 signal = 'LONG';
+                                console.log(`[StochRSI-Debug] => LONG signal: golden cross, both K & D in oversold zone`);
                             }
-                            // Dead cross in overbought area (>= 80)
-                            else if (prevK >= prevD && currK < currD && (currK >= 80 || prevK >= 80)) {
+                            // Dead cross: both K and D must be in the overbought zone (>= 80)
+                            else if (prevK >= prevD && currK < currD &&
+                                ((currK >= 80 && currD >= 80) || (prevK >= 80 && prevD >= 80))) {
                                 signal = 'SHORT';
+                                console.log(`[StochRSI-Debug] => SHORT signal: dead cross, both K & D in overbought zone`);
                             }
                         }
                     }
