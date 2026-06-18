@@ -717,33 +717,32 @@ function calculateMACDForKlines(klines, fast, slow, sig) {
 function calculateRSI(closes, period = 14) {
     const len = closes.length;
     const rsi = new Array(len).fill(null);
-    if (len < period + 1) return rsi;
+    if (len < 2) return rsi;
     
-    let avgGain = 0;
-    let avgLoss = 0;
+    const alpha = 1 / period;
+    let avgGain = closes[1] - closes[0] > 0 ? closes[1] - closes[0] : 0;
+    let avgLoss = closes[1] - closes[0] < 0 ? Math.abs(closes[1] - closes[0]) : 0;
     
-    for (let i = 1; i <= period; i++) {
+    rsi[1] = avgLoss === 0 ? 100 : (avgGain === 0 ? 0 : 100 - (100 / (1 + avgGain / avgLoss)));
+    
+    for (let i = 2; i < len; i++) {
         const change = closes[i] - closes[i - 1];
-        if (change > 0) {
-            avgGain += change;
+        let gain = 0;
+        let loss = 0;
+        if (change > 0) gain = change;
+        else loss = Math.abs(change);
+        
+        avgGain = avgGain * (1 - alpha) + gain * alpha;
+        avgLoss = avgLoss * (1 - alpha) + loss * alpha;
+        
+        if (avgLoss === 0) {
+            rsi[i] = 100;
+        } else if (avgGain === 0) {
+            rsi[i] = 0;
         } else {
-            avgLoss += Math.abs(change);
+            const rs = avgGain / avgLoss;
+            rsi[i] = 100 - (100 / (1 + rs));
         }
-    }
-    avgGain /= period;
-    avgLoss /= period;
-    
-    rsi[period] = avgLoss === 0 ? 100 : (avgGain === 0 ? 0 : 100 - (100 / (1 + avgGain / avgLoss)));
-    
-    for (let i = period + 1; i < len; i++) {
-        const change = closes[i] - closes[i - 1];
-        const gain = change > 0 ? change : 0;
-        const loss = change < 0 ? Math.abs(change) : 0;
-        
-        avgGain = (avgGain * (period - 1) + gain) / period;
-        avgLoss = (avgLoss * (period - 1) + loss) / period;
-        
-        rsi[i] = avgLoss === 0 ? 100 : (avgGain === 0 ? 0 : 100 - (100 / (1 + avgGain / avgLoss)));
     }
     return rsi;
 }

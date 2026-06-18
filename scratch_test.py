@@ -27,7 +27,7 @@ def main():
     df['prev_k'] = df['k'].shift(1)
     df['prev_d'] = df['d'].shift(1)
     
-    df_filtered = df[(df['timestamp'] >= '2026-06-10 16:00:00') & (df['timestamp'] <= '2026-06-10 18:00:00')]
+    df_filtered = df[(df['timestamp'] >= '2026-06-17 14:00:00') & (df['timestamp'] <= '2026-06-17 17:00:00')]
     for i, row in df_filtered.iterrows():
         print(f"{row['timestamp']} | k: {row['k']:.2f} | d: {row['d']:.2f} | prev_k: {row['prev_k']:.2f} | prev_d: {row['prev_d']:.2f}")
 
