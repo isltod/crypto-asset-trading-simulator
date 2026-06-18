@@ -1782,7 +1782,7 @@ class BinanceDataFetcher(QMainWindow):
                         end_ms = int(df_curr['timestamp'].max())
             
             if start_ms is not None and end_ms is not None:
-                warmup_bars = max(1000, max(rsi_len, stoch_len, k_len, d_len) * 4)
+                warmup_bars = max(rsi_len, stoch_len, k_len, d_len) * 4
                 target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
                 start_download_ms = start_ms - (target_ms * warmup_bars)
                 end_download_ms = end_ms
@@ -1850,10 +1850,8 @@ class BinanceDataFetcher(QMainWindow):
             golden_cross = (prev_k <= prev_d) & (k > d)
             dead_cross = (prev_k >= prev_d) & (k < d)
             
-            # K, D 모두 과매도 구간에서 골든크로스 → 롱
-            # K, D 모두 과매수 구간에서 데드크로스 → 숏
-            long_signal  = golden_cross & (((k <= os_level) & (d <= os_level)) | ((prev_k <= os_level) & (prev_d <= os_level)))
-            short_signal = dead_cross   & (((k >= ob_level) & (d >= ob_level)) | ((prev_k >= ob_level) & (prev_d >= ob_level)))
+            long_signal = golden_cross & ((k <= os_level) | (prev_k <= os_level))
+            short_signal = dead_cross & ((k >= ob_level) | (prev_k >= ob_level))
             
             signal_series = pd.Series(0, index=merged.index)
             signal_series.loc[long_signal] = 1
@@ -2526,7 +2524,7 @@ class BinanceDataFetcher(QMainWindow):
             if not quiet and hasattr(self, 'mtf_stoch_rsi_settings') and self.mtf_stoch_rsi_settings:
                 for (tf_key, rsi_len, stoch_len, k_len, d_len, ob_level, os_level) in self.mtf_stoch_rsi_settings:
                     if tf_key != timeframe:
-                        warmup_bars = max(1000, max(rsi_len, stoch_len, k_len, d_len) * 4)
+                        warmup_bars = max(rsi_len, stoch_len, k_len, d_len) * 4
                         target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
                         start_download_ms = start_ms - (target_ms * warmup_bars)
                         end_download_ms = end_ms
