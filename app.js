@@ -568,8 +568,7 @@ function applyIndicatorMarkers() {
 
             const time = formattedData[i].time;
 
-            if (prevK <= prevD && currK > currD &&
-                ((currK <= 20 && currD <= 20) || (prevK <= 20 && prevD <= 20))) {
+            if (prevK <= prevD && currK > currD && (currK <= 20 || prevK <= 20)) {
                 markers.push({
                     time: time,
                     position: 'belowBar',
@@ -586,8 +585,7 @@ function applyIndicatorMarkers() {
                     text: 'L',
                     size: 1
                 });
-            } else if (prevK >= prevD && currK < currD &&
-                ((currK >= 80 && currD >= 80) || (prevK >= 80 && prevD >= 80))) {
+            } else if (prevK >= prevD && currK < currD && (currK >= 80 || prevK >= 80)) {
                 markers.push({
                     time: time,
                     position: 'aboveBar',

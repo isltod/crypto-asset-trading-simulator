@@ -1150,21 +1150,13 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                         if (prevK !== null && prevD !== null && currK !== null && currD !== null &&
                             prevK !== undefined && prevD !== undefined && currK !== undefined && currD !== undefined) {
                             
-                            const tCurrStr = new Date(tStartCurr * 1000).toISOString();
-                            const tPrevStr = new Date(tStartPrev * 1000).toISOString();
-                            console.log(`[StochRSI-Debug] ${symbol} tf=${tf} | prevCandle=${tPrevStr} prevK=${prevK?.toFixed(2)} prevD=${prevD?.toFixed(2)} | currCandle=${tCurrStr} currK=${currK?.toFixed(2)} currD=${currD?.toFixed(2)}`);
-
-                            // Golden cross: both K and D must be in the oversold zone (<= 20)
-                            if (prevK <= prevD && currK > currD &&
-                                ((currK <= 20 && currD <= 20) || (prevK <= 20 && prevD <= 20))) {
+                            // Golden cross in oversold area (<= 20)
+                            if (prevK <= prevD && currK > currD && (currK <= 20 || prevK <= 20)) {
                                 signal = 'LONG';
-                                console.log(`[StochRSI-Debug] => LONG signal: golden cross, both K & D in oversold zone`);
                             }
-                            // Dead cross: both K and D must be in the overbought zone (>= 80)
-                            else if (prevK >= prevD && currK < currD &&
-                                ((currK >= 80 && currD >= 80) || (prevK >= 80 && prevD >= 80))) {
+                            // Dead cross in overbought area (>= 80)
+                            else if (prevK >= prevD && currK < currD && (currK >= 80 || prevK >= 80)) {
                                 signal = 'SHORT';
-                                console.log(`[StochRSI-Debug] => SHORT signal: dead cross, both K & D in overbought zone`);
                             }
                         }
                     }
@@ -1190,14 +1182,11 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                             console.log(`[AutoTrade] User ${account.username} already has a ${signal} position on ${symbol}. Skipping.`);
                         } else {
                             console.log(`[AutoTrade] Opposite signal ${signal} detected. Closing current ${pos.side} position on ${symbol} for ${account.username}`);
-                            // openingUsers 잠금을 미리 해제하여 closePosition 완료 후 openPositionInternal이 즉시 실행될 수 있게 함
-                            openingUsers.delete(userId);
                             closePosition(userId, currentPrice, null, (success) => {
                                 if (success) {
-                                    // setTimeout 제거: closePosition의 cb는 DELETE FROM positions 완료 후 호출되므로 즉시 진입 가능
-                                    openPositionInternal(userId, symbol, signal, currentPrice);
-                                } else {
-                                    console.log(`[AutoTrade] Failed to close position for user ${account.username}. New position not opened.`);
+                                    setTimeout(() => {
+                                        openPositionInternal(userId, symbol, signal, currentPrice);
+                                    }, 500);
                                 }
                             });
                         }
