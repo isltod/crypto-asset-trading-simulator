@@ -1873,59 +1873,65 @@ function initChart() {
     });
 
     // Sync crosshairs quad-directionally
-    let isSyncingCrosshair = false;
+    let activeChart = null;
+
+    chartContainer.addEventListener('mouseenter', () => activeChart = chart);
+    wtChartContainer.addEventListener('mouseenter', () => activeChart = wtChart);
+    macdChartContainer.addEventListener('mouseenter', () => activeChart = macdChart);
+    stochChartContainer.addEventListener('mouseenter', () => activeChart = stochRsiChart);
+
+    chartContainer.addEventListener('mouseleave', () => { if (activeChart === chart) activeChart = null; });
+    wtChartContainer.addEventListener('mouseleave', () => { if (activeChart === wtChart) activeChart = null; });
+    macdChartContainer.addEventListener('mouseleave', () => { if (activeChart === macdChart) activeChart = null; });
+    stochChartContainer.addEventListener('mouseleave', () => { if (activeChart === stochRsiChart) activeChart = null; });
+
     function syncCrosshair(sourceChart, param) {
-        if (isSyncingCrosshair) return;
-        isSyncingCrosshair = true;
-        try {
-            const time = param && param.time;
-            if (!time) {
-                if (sourceChart !== chart) chart.clearCrosshairPosition();
-                if (sourceChart !== wtChart) wtChart.clearCrosshairPosition();
-                if (sourceChart !== macdChart) macdChart.clearCrosshairPosition();
-                if (sourceChart !== stochRsiChart) stochRsiChart.clearCrosshairPosition();
-            } else {
-                // Sync main chart
-                if (sourceChart !== chart) {
-                    let price = 0;
-                    if (window.klineData) {
-                        const match = window.klineData.find(d => d.time === time);
-                        if (match) price = match.close;
-                    }
-                    chart.setCrosshairPosition(price, time, candleSeries);
-                }
-                // Sync WaveTrend
-                if (sourceChart !== wtChart) {
-                    let price = 0;
-                    if (window.lastWtData && window.lastWtData.wt1Data) {
-                        const match = window.lastWtData.wt1Data.find(d => d.time === time);
-                        if (match && match.value !== undefined) price = match.value;
-                    }
-                    wtChart.setCrosshairPosition(price, time, wt1Series);
-                }
-                // Sync MACD
-                if (sourceChart !== macdChart) {
-                    let price = 0;
-                    if (window.lastMacdData && window.lastMacdData.macdData) {
-                        const match = window.lastMacdData.macdData.find(d => d.time === time);
-                        if (match && match.value !== undefined) price = match.value;
-                    }
-                    macdChart.setCrosshairPosition(price, time, macdLineSeries);
-                }
-                // Sync StochRSI
-                if (sourceChart !== stochRsiChart) {
-                    let price = 0;
-                    if (window.lastStochData && window.lastStochData.kData) {
-                        const match = window.lastStochData.kData.find(d => d.time === time);
-                        if (match && match.value !== undefined) price = match.value;
-                    }
-                    stochRsiChart.setCrosshairPosition(price, time, stochRsiKSeries);
-                }
+        if (activeChart && sourceChart !== activeChart) return;
+
+        const time = param && param.time;
+        if (!time) {
+            if (sourceChart !== chart) chart.clearCrosshairPosition();
+            if (sourceChart !== wtChart) wtChart.clearCrosshairPosition();
+            if (sourceChart !== macdChart) macdChart.clearCrosshairPosition();
+            if (sourceChart !== stochRsiChart) stochRsiChart.clearCrosshairPosition();
+            return;
+        }
+
+        // Sync main chart
+        if (sourceChart !== chart) {
+            let price = 0;
+            if (window.klineData) {
+                const match = window.klineData.find(d => d.time === time);
+                if (match) price = match.close;
             }
-        } catch (e) {
-            console.error(e);
-        } finally {
-            isSyncingCrosshair = false;
+            chart.setCrosshairPosition(price, time, candleSeries);
+        }
+        // Sync WaveTrend
+        if (sourceChart !== wtChart) {
+            let price = 0;
+            if (window.lastWtData && window.lastWtData.wt1Data) {
+                const match = window.lastWtData.wt1Data.find(d => d.time === time);
+                if (match && match.value !== undefined) price = match.value;
+            }
+            wtChart.setCrosshairPosition(price, time, wt1Series);
+        }
+        // Sync MACD
+        if (sourceChart !== macdChart) {
+            let price = 0;
+            if (window.lastMacdData && window.lastMacdData.macdData) {
+                const match = window.lastMacdData.macdData.find(d => d.time === time);
+                if (match && match.value !== undefined) price = match.value;
+            }
+            macdChart.setCrosshairPosition(price, time, macdLineSeries);
+        }
+        // Sync StochRSI
+        if (sourceChart !== stochRsiChart) {
+            let price = 0;
+            if (window.lastStochData && window.lastStochData.kData) {
+                const match = window.lastStochData.kData.find(d => d.time === time);
+                if (match && match.value !== undefined) price = match.value;
+            }
+            stochRsiChart.setCrosshairPosition(price, time, stochRsiKSeries);
         }
     }
 

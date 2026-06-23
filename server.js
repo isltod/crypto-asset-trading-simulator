@@ -1244,6 +1244,36 @@ function setupBinanceStream() {
                             history.shift();
                         }
                     }
+
+                    // 다중 타임프레임(MTF) 데이터도 실시간으로 업데이트하여 갭 방지
+                    if (klineHistoriesMTF[symbol]) {
+                        const tfMap = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400 };
+                        for (const tf in klineHistoriesMTF[symbol]) {
+                            const interval = tfMap[tf];
+                            if (!interval) continue;
+                            const mtfHistory = klineHistoriesMTF[symbol][tf];
+                            const key = Math.floor(tick.time / interval) * interval;
+                            const mtfLastIdx = mtfHistory.length - 1;
+                            
+                            if (mtfLastIdx >= 0 && mtfHistory[mtfLastIdx].time === key) {
+                                const currentMtf = mtfHistory[mtfLastIdx];
+                                currentMtf.high = Math.max(currentMtf.high, tick.high);
+                                currentMtf.low = Math.min(currentMtf.low, tick.low);
+                                currentMtf.close = tick.close;
+                            } else {
+                                mtfHistory.push({
+                                    time: key,
+                                    open: tick.open,
+                                    high: tick.high,
+                                    low: tick.low,
+                                    close: tick.close
+                                });
+                                if (mtfHistory.length > 500) {
+                                    mtfHistory.shift();
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Broadcast to all connected clients
