@@ -59,10 +59,12 @@ db.serialize(() => {
         sl_roi REAL NOT NULL DEFAULT -5,
         auto_trade_enabled BOOLEAN NOT NULL DEFAULT 0,
         signal_type TEXT NOT NULL DEFAULT 'none',
+        wt_tf TEXT NOT NULL DEFAULT '5m',
         wt_n1 INTEGER NOT NULL DEFAULT 10,
         wt_n2 INTEGER NOT NULL DEFAULT 21,
         wt_sig INTEGER NOT NULL DEFAULT 4,
         wt_ob INTEGER NOT NULL DEFAULT 53,
+        wt_allow_repaint INTEGER NOT NULL DEFAULT 0,
         symbol TEXT NOT NULL DEFAULT 'BTCUSDT',
         macd_tf TEXT NOT NULL DEFAULT '5m',
         macd_fast INTEGER NOT NULL DEFAULT 12,
@@ -132,6 +134,8 @@ db.serialize(() => {
     db.run(`ALTER TABLE accounts ADD COLUMN stoch_k INTEGER DEFAULT 3`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN stoch_d INTEGER DEFAULT 3`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN stoch_allow_repaint INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN wt_tf TEXT DEFAULT '5m'`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN wt_allow_repaint INTEGER DEFAULT 0`, (err) => {});
 });
 
 // Auth Middleware
@@ -212,10 +216,12 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         sl_roi, 
         auto_trade_enabled, 
         signal_type, 
+        wt_tf,
         wt_n1, 
         wt_n2, 
         wt_sig, 
         wt_ob,
+        wt_allow_repaint,
         symbol,
         macd_tf,
         macd_fast,
@@ -239,10 +245,12 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         const updatedSl = sl_roi !== undefined ? sl_roi : row.sl_roi;
         const updatedAutoTrade = auto_trade_enabled !== undefined ? (auto_trade_enabled ? 1 : 0) : row.auto_trade_enabled;
         const updatedSignalType = signal_type !== undefined ? signal_type : row.signal_type;
+        const updatedWtTf = wt_tf !== undefined ? wt_tf : row.wt_tf;
         const updatedWtN1 = wt_n1 !== undefined ? wt_n1 : row.wt_n1;
         const updatedWtN2 = wt_n2 !== undefined ? wt_n2 : row.wt_n2;
         const updatedWtSig = wt_sig !== undefined ? wt_sig : row.wt_sig;
         const updatedWtOb = wt_ob !== undefined ? wt_ob : row.wt_ob;
+        const updatedWtAllowRepaint = wt_allow_repaint !== undefined ? (wt_allow_repaint ? 1 : 0) : row.wt_allow_repaint;
         const updatedSymbol = symbol !== undefined ? symbol : row.symbol;
         const updatedMacdTf = macd_tf !== undefined ? macd_tf : row.macd_tf;
         const updatedMacdFast = macd_fast !== undefined ? macd_fast : row.macd_fast;
@@ -259,14 +267,14 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         db.run(`UPDATE accounts SET 
             leverage = ?, tpsl_enabled = ?, tp_roi = ?, sl_roi = ?, 
             auto_trade_enabled = ?, signal_type = ?, 
-            wt_n1 = ?, wt_n2 = ?, wt_sig = ?, wt_ob = ?,
+            wt_tf = ?, wt_n1 = ?, wt_n2 = ?, wt_sig = ?, wt_ob = ?, wt_allow_repaint = ?,
             symbol = ?, macd_tf = ?, macd_fast = ?, macd_slow = ?, macd_sig = ?, macd_allow_repaint = ?,
             stoch_tf = ?, stoch_rsi_len = ?, stoch_len = ?, stoch_k = ?, stoch_d = ?, stoch_allow_repaint = ?
             WHERE user_id = ?`, 
             [
                 updatedLeverage, updatedTpsl, updatedTp, updatedSl, 
                 updatedAutoTrade, updatedSignalType, 
-                updatedWtN1, updatedWtN2, updatedWtSig, updatedWtOb, 
+                updatedWtTf, updatedWtN1, updatedWtN2, updatedWtSig, updatedWtOb, updatedWtAllowRepaint, 
                 updatedSymbol, updatedMacdTf, updatedMacdFast, updatedMacdSlow, updatedMacdSig, updatedMacdAllowRepaint,
                 updatedStochTf, updatedStochRsiLen, updatedStochLen, updatedStochK, updatedStochD, updatedStochAllowRepaint,
                 userId
@@ -1022,28 +1030,62 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
             let signal = null;
 
             if (account.signal_type === 'wave_trend') {
-                if (!isClosed) return; // WaveTrend only on closed candles
-
+                const tf = account.wt_tf || '5m';
                 const n1 = account.wt_n1;
                 const n2 = account.wt_n2;
                 const sigLen = account.wt_sig;
                 const obLevel = account.wt_ob;
-                
-                const wt = calculateWaveTrend(history, n1, n2, sigLen);
+                const allowRepaint = account.wt_allow_repaint === 1;
+
+                if (!isClosed && !allowRepaint) return; // 리페인팅 미허용 시 미마감 캔들 무시
+
+                const aggregated = aggregateKlines(history, tf, symbol);
+                const wt = calculateWaveTrend(aggregated, n1, n2, sigLen);
                 const len = wt.wt1Data.length;
                 if (len < 2) return;
 
-                const prevWt1 = wt.wt1Data[len - 2];
-                const prevWt2 = wt.wt2Data[len - 2];
-                const currWt1 = wt.wt1Data[len - 1];
-                const currWt2 = wt.wt2Data[len - 1];
+                const currentTick = history[history.length - 1];
+                if (currentTick) {
+                    const tfMap = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400 };
+                    const duration = tfMap[tf] || 300;
 
-                if (prevWt1 === undefined || prevWt2 === undefined || currWt1 === undefined || currWt2 === undefined) return;
+                    const tClose = currentTick.time + 60;
 
-                if (prevWt1 < prevWt2 && currWt1 > currWt2 && currWt1 < -obLevel) {
-                    signal = 'LONG';
-                } else if (prevWt1 > prevWt2 && currWt1 < currWt2 && currWt1 > obLevel) {
-                    signal = 'SHORT';
+                    if (allowRepaint || (tClose % duration === 0 && isClosed)) {
+                        let prevWt1, prevWt2, currWt1, currWt2;
+
+                        if (allowRepaint) {
+                            const lastIdx = wt.wt1Data.length - 1;
+                            if (lastIdx >= 1) {
+                                currWt1 = wt.wt1Data[lastIdx];
+                                currWt2 = wt.wt2Data[lastIdx];
+                                prevWt1 = wt.wt1Data[lastIdx - 1];
+                                prevWt2 = wt.wt2Data[lastIdx - 1];
+                            }
+                        } else {
+                            const tStartCurr = tClose - duration;
+                            const tStartPrev = tClose - 2 * duration;
+
+                            const idxCurr = aggregated.findIndex(k => k.time === tStartCurr);
+                            const idxPrev = aggregated.findIndex(k => k.time === tStartPrev);
+
+                            if (idxCurr !== -1 && idxPrev !== -1) {
+                                currWt1 = wt.wt1Data[idxCurr];
+                                currWt2 = wt.wt2Data[idxCurr];
+                                prevWt1 = wt.wt1Data[idxPrev];
+                                prevWt2 = wt.wt2Data[idxPrev];
+                            }
+                        }
+
+                        if (prevWt1 !== undefined && prevWt2 !== undefined && currWt1 !== undefined && currWt2 !== undefined &&
+                            prevWt1 !== null && prevWt2 !== null && currWt1 !== null && currWt2 !== null) {
+                            if (prevWt1 < prevWt2 && currWt1 > currWt2 && currWt1 < -obLevel) {
+                                signal = 'LONG';
+                            } else if (prevWt1 > prevWt2 && currWt1 < currWt2 && currWt1 > obLevel) {
+                                signal = 'SHORT';
+                            }
+                        }
+                    }
                 }
             } else if (account.signal_type === 'mtf_macd') {
                 const tf = account.macd_tf || '5m';

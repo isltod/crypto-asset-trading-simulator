@@ -59,7 +59,7 @@
                         <label class="toggle-switch">
                             <input type="checkbox" id="toggle-wt" checked>
                             <span class="slider"></span>
-                            <span class="label-text">WaveTrend</span>
+                            <span class="label-text">MTF WaveTrend</span>
                         </label>
                     </div>
 
@@ -90,6 +90,20 @@
 
                 <div id="wt-params-container" class="input-container hidden">
                     <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">WT Params:</span>
+                    <div class="input-group" title="Timeframe">
+                        <span class="label-text" style="font-size:0.7rem;">TF</span>
+                        <select id="wt-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
+                            <option value="1m">1m</option>
+                            <option value="3m">3m</option>
+                            <option value="5m" selected>5m</option>
+                            <option value="15m">15m</option>
+                            <option value="30m">30m</option>
+                            <option value="1h">1h</option>
+                            <option value="4h">4h</option>
+                            <option value="1d">1d</option>
+                        </select>
+                    </div>
+                    <div class="divider"></div>
                     <div class="input-group" title="Channel Length (n1)">
                         <span class="label-text" style="font-size:0.7rem;">n1</span>
                         <input type="number" id="wt-n1" class="length-input" value="10" min="1" max="100">
@@ -108,6 +122,11 @@
                     <div class="input-group" title="Overbought/Oversold Level">
                         <span class="label-text" style="font-size:0.7rem;">OB/OS</span>
                         <input type="number" id="wt-ob" class="length-input" value="53" min="1" max="100">
+                    </div>
+                    <div class="divider"></div>
+                    <div class="input-group" title="Allow Repainting" style="flex-direction: row; align-items: center; gap: 4px;">
+                        <span class="label-text" style="font-size:0.7rem;">Repaint</span>
+                        <input type="checkbox" id="wt-allow-repaint" style="cursor: pointer;">
                     </div>
                 </div>
 
@@ -280,7 +299,7 @@
                         <div class="custom-select" style="width: 130px;">
                             <select id="signal-select" style="padding: 4px 24px 4px 8px; font-size: 12px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 6px; width: 100%;">
                                 <option value="none">None</option>
-                                <option value="wave_trend">WaveTrend</option>
+                                <option value="wave_trend">MTF WaveTrend</option>
                                 <option value="mtf_macd">MTF MACD</option>
                                 <option value="stoch_rsi">MTF Stoch RSI</option>
                                 <option value="rl_model">RL Model (ONNX)</option>
