@@ -82,10 +82,12 @@ let signalType = 'none';
 let wtChart = null;
 let wt1Series = null;
 let wt2Series = null;
+let WT_TF = '5m';
 let WT_CHANNEL_LEN = 10;
 let WT_AVG_LEN = 21;
 let WT_SIG_LEN = 4;
 let WT_OB_LEVEL = 53;
+let WT_ALLOW_REPAINT = false;
 let wtPriceLines = [];
 
 // Supertrend State & Constants
@@ -172,6 +174,41 @@ function calculateWaveTrend(formattedData, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN,
         } else {
             wt1Data.push({ time: formattedData[i].time, value: wt1[i] });
             wt2Data.push({ time: formattedData[i].time, value: wt2[i] });
+        }
+    }
+
+    return { wt1Data, wt2Data };
+}
+
+function calculateMTFWaveTrend(formattedData, tf = WT_TF, n1 = WT_CHANNEL_LEN, n2 = WT_AVG_LEN, sigLen = WT_SIG_LEN, allowRepaint = WT_ALLOW_REPAINT) {
+    const aggregated = aggregateKlines(formattedData, tf);
+    const wtResult = calculateWaveTrend(aggregated, n1, n2, sigLen);
+
+    const wt1Data = [];
+    const wt2Data = [];
+
+    let aggIdx = 0;
+    for (let i = 0; i < formattedData.length; i++) {
+        const t = formattedData[i].time;
+        while (aggIdx + 1 < aggregated.length && aggregated[aggIdx + 1].time <= t) {
+            aggIdx++;
+        }
+
+        const is1m = tf === '1m';
+        const useIdx = (is1m || allowRepaint) ? aggIdx : aggIdx - 1;
+        const currentAgg = useIdx >= 0 ? aggregated[useIdx] : null;
+
+        if (currentAgg) {
+            const wt1Obj = wtResult.wt1Data[useIdx];
+            const wt2Obj = wtResult.wt2Data[useIdx];
+            const wt1Val = wt1Obj ? wt1Obj.value : undefined;
+            const wt2Val = wt2Obj ? wt2Obj.value : undefined;
+
+            wt1Data.push({ time: t, value: wt1Val });
+            wt2Data.push({ time: t, value: wt2Val });
+        } else {
+            wt1Data.push({ time: t });
+            wt2Data.push({ time: t });
         }
     }
 
@@ -943,6 +980,13 @@ async function fetchAccountData() {
         autoTradeEnabled = acc.auto_trade_enabled === 1;
         signalType = acc.signal_type || 'none';
 
+        WT_TF = acc.wt_tf || '5m';
+        WT_CHANNEL_LEN = acc.wt_n1 || 10;
+        WT_AVG_LEN = acc.wt_n2 || 21;
+        WT_SIG_LEN = acc.wt_sig || 4;
+        WT_OB_LEVEL = acc.wt_ob || 53;
+        WT_ALLOW_REPAINT = acc.wt_allow_repaint === 1;
+
         MACD_TF = acc.macd_tf || '5m';
         MACD_FAST = acc.macd_fast || 12;
         MACD_SLOW = acc.macd_slow || 26;
@@ -955,6 +999,19 @@ async function fetchAccountData() {
         STOCH_K = acc.stoch_k || 3;
         STOCH_D = acc.stoch_d || 3;
         STOCH_ALLOW_REPAINT = acc.stoch_allow_repaint === 1;
+
+        const wtTfInput = document.getElementById('wt-tf');
+        if (wtTfInput) wtTfInput.value = WT_TF;
+        const wtN1Input = document.getElementById('wt-n1');
+        if (wtN1Input) wtN1Input.value = WT_CHANNEL_LEN;
+        const wtN2Input = document.getElementById('wt-n2');
+        if (wtN2Input) wtN2Input.value = WT_AVG_LEN;
+        const wtSigInput = document.getElementById('wt-sig');
+        if (wtSigInput) wtSigInput.value = WT_SIG_LEN;
+        const wtObInput = document.getElementById('wt-ob');
+        if (wtObInput) wtObInput.value = WT_OB_LEVEL;
+        const wtRepaintInput = document.getElementById('wt-allow-repaint');
+        if (wtRepaintInput) wtRepaintInput.checked = WT_ALLOW_REPAINT;
 
         const macdTfInput = document.getElementById('macd-tf');
         if (macdTfInput) macdTfInput.value = MACD_TF;
@@ -1031,10 +1088,12 @@ function updateBotState() {
 
 async function updateConfig() {
     if (!authToken) return;
+    const wtTf = document.getElementById('wt-tf')?.value || WT_TF;
     const wtN1 = parseInt(document.getElementById('wt-n1')?.value || WT_CHANNEL_LEN, 10);
     const wtN2 = parseInt(document.getElementById('wt-n2')?.value || WT_AVG_LEN, 10);
     const wtSig = parseInt(document.getElementById('wt-sig')?.value || WT_SIG_LEN, 10);
     const wtOb = parseInt(document.getElementById('wt-ob')?.value || WT_OB_LEVEL, 10);
+    const wtAllowRepaint = document.getElementById('wt-allow-repaint')?.checked || false;
 
     const macdTf = document.getElementById('macd-tf')?.value || MACD_TF;
     const macdFast = parseInt(document.getElementById('macd-fast')?.value || MACD_FAST, 10);
@@ -1057,10 +1116,12 @@ async function updateConfig() {
             sl_roi: parseFloat(document.getElementById('sl-input').value) || -5,
             auto_trade_enabled: toggleAutoTrade ? toggleAutoTrade.checked : false,
             signal_type: signalSelect ? signalSelect.value : 'none',
+            wt_tf: wtTf,
             wt_n1: wtN1,
             wt_n2: wtN2,
             wt_sig: wtSig,
             wt_ob: wtOb,
+            wt_allow_repaint: wtAllowRepaint,
             macd_tf: macdTf,
             macd_fast: macdFast,
             macd_slow: macdSlow,
@@ -1287,6 +1348,30 @@ async function init() {
     bindWTParamInput('wt-n2', 1);
     bindWTParamInput('wt-sig', 1);
     bindWTParamInput('wt-ob', 1);
+
+    const wtRepaintInput = document.getElementById('wt-allow-repaint');
+    if (wtRepaintInput) {
+        wtRepaintInput.addEventListener('change', async (e) => {
+            WT_ALLOW_REPAINT = e.target.checked;
+            if (window.klineData) updateChartSeries();
+            saveUIConfig();
+            if (authToken) {
+                await updateConfig();
+            }
+        });
+    }
+
+    const wtTfInput = document.getElementById('wt-tf');
+    if (wtTfInput) {
+        wtTfInput.addEventListener('change', async (e) => {
+            WT_TF = e.target.value;
+            if (window.klineData) updateChartSeries();
+            saveUIConfig();
+            if (authToken) {
+                await updateConfig();
+            }
+        });
+    }
 
     // MACD Parameter Inputs Event Listeners
     const bindMACDParamInput = (id) => {
@@ -2016,7 +2101,7 @@ function updateChartSeries() {
     bbUpperSeries.setData(bbUpperData);
     bbLowerSeries.setData(bbLowerData);
 
-    const wtData = calculateWaveTrend(formattedData);
+    const wtData = calculateMTFWaveTrend(formattedData, WT_TF, WT_CHANNEL_LEN, WT_AVG_LEN, WT_SIG_LEN, WT_ALLOW_REPAINT);
     window.lastWtData = wtData;
     wt1Series.setData(wtData.wt1Data);
     wt2Series.setData(wtData.wt2Data);
@@ -2066,7 +2151,7 @@ function updateIndicators() {
     }
 
     // Update WaveTrend: recalculate last point
-    const wtData = calculateWaveTrend(data);
+    const wtData = calculateMTFWaveTrend(data, WT_TF, WT_CHANNEL_LEN, WT_AVG_LEN, WT_SIG_LEN, WT_ALLOW_REPAINT);
     window.lastWtData = wtData;
     if (wtData.wt1Data.length > 0) {
         wt1Series.update(wtData.wt1Data[wtData.wt1Data.length - 1]);
@@ -2290,10 +2375,12 @@ function saveUIConfig() {
         showBB: document.getElementById('toggle-bb').checked,
         showWT: document.getElementById('toggle-wt').checked,
         wtHeight: parseInt(document.getElementById('wt-chart-container').style.height || '150', 10),
+        wtTF: document.getElementById('wt-tf')?.value || '5m',
         wtN1: parseInt(document.getElementById('wt-n1')?.value || '10', 10),
         wtN2: parseInt(document.getElementById('wt-n2')?.value || '21', 10),
         wtSig: parseInt(document.getElementById('wt-sig')?.value || '4', 10),
         wtOb: parseInt(document.getElementById('wt-ob')?.value || '53', 10),
+        wtAllowRepaint: document.getElementById('wt-allow-repaint')?.checked || false,
         showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
         supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
         supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0'),
@@ -2333,6 +2420,10 @@ function loadUIConfig() {
             if (config.wtHeight) {
                 document.getElementById('wt-chart-container').style.height = `${config.wtHeight}px`;
             }
+            if (config.wtTF && document.getElementById('wt-tf')) {
+                document.getElementById('wt-tf').value = config.wtTF;
+                WT_TF = config.wtTF;
+            }
             if (config.wtN1 && document.getElementById('wt-n1')) {
                 document.getElementById('wt-n1').value = config.wtN1;
                 WT_CHANNEL_LEN = config.wtN1;
@@ -2348,6 +2439,10 @@ function loadUIConfig() {
             if (config.wtOb && document.getElementById('wt-ob')) {
                 document.getElementById('wt-ob').value = config.wtOb;
                 WT_OB_LEVEL = config.wtOb;
+            }
+            if (typeof config.wtAllowRepaint === 'boolean' && document.getElementById('wt-allow-repaint')) {
+                document.getElementById('wt-allow-repaint').checked = config.wtAllowRepaint;
+                WT_ALLOW_REPAINT = config.wtAllowRepaint;
             }
             if (typeof config.showSupertrend === 'boolean' && document.getElementById('toggle-supertrend')) {
                 document.getElementById('toggle-supertrend').checked = config.showSupertrend;

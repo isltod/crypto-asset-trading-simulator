@@ -412,12 +412,25 @@ class SqueezeDialog(QDialog):
 
 
 class WaveTrendDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, current_tf='1m'):
         super().__init__(parent)
-        self.setWindowTitle("WaveTrend Oscillator 설정")
-        self.resize(320, 310)
+        self.setWindowTitle("다중 타임프레임 WaveTrend Oscillator 설정")
+        self.resize(320, 350)
         
         layout = QVBoxLayout(self)
+
+        tf_layout = QHBoxLayout()
+        tf_layout.addWidget(QLabel("대상 시간 틀:"))
+        self.tf_combo = QComboBox()
+        for key in TIMEFRAME_KEYS:
+            self.tf_combo.addItem(TIMEFRAME_CONFIG[key]['label'], key)
+        try:
+            curr_idx = TIMEFRAME_KEYS.index(current_tf)
+        except ValueError:
+            curr_idx = 0
+        self.tf_combo.setCurrentIndex(curr_idx)
+        tf_layout.addWidget(self.tf_combo)
+        layout.addLayout(tf_layout)
         
         ch_len_layout = QHBoxLayout()
         ch_len_layout.addWidget(QLabel("채널 기간:"))
@@ -475,7 +488,7 @@ class WaveTrendDialog(QDialog):
         layout.addWidget(self.action_btn)
         
     def get_settings(self):
-        return (self.ch_len_spin.value(), self.avg_len_spin.value(), self.wt2_len_spin.value(),
+        return (self.tf_combo.currentData(), self.ch_len_spin.value(), self.avg_len_spin.value(), self.wt2_len_spin.value(),
                 self.ob_spin.value(), self.os_spin.value(), self.cum_spin.value(),
                 self.ls_checkbox.isChecked())
 
@@ -1136,53 +1149,105 @@ class BinanceDataFetcher(QMainWindow):
             self.setWindowTitle("Binance Futures BTC OHLCV Downloader")
 
     def open_wavetrend_dialog(self):
-        dialog = WaveTrendDialog(self)
+        dialog = WaveTrendDialog(self, current_tf=self.current_timeframe)
         if dialog.exec():
-            ch_len, avg_len, wt2_len, ob_level, os_level, cross_count, use_ls = dialog.get_settings()
-            setting = (ch_len, avg_len, wt2_len, ob_level, os_level, cross_count)
+            tf_key, ch_len, avg_len, wt2_len, ob_level, os_level, cross_count, use_ls = dialog.get_settings()
+            setting = (tf_key, ch_len, avg_len, wt2_len, ob_level, os_level, cross_count)
             if setting not in self.wavetrend_settings:
                 self.wavetrend_settings.append(setting)
             
+            # 대상 시간틀 데이터 자동 다운로드 및 캐시
+            cache_file = TIMEFRAME_CONFIG[self.current_timeframe]['cache']
+            import os
+            start_ms = getattr(self, 'last_start_ms', None)
+            end_ms = getattr(self, 'last_end_ms', None)
+            
+            if start_ms is None or end_ms is None:
+                if os.path.exists(cache_file):
+                    df_curr = pd.read_csv(cache_file)
+                    if not df_curr.empty:
+                        start_ms = int(df_curr['timestamp'].min())
+                        end_ms = int(df_curr['timestamp'].max())
+            
+            if start_ms is not None and end_ms is not None:
+                # WaveTrend 웜업용 기간 확보 (ch_len + avg_len + wt2_len) * 4 봉
+                warmup_bars = (ch_len + avg_len + wt2_len) * 4
+                target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+                start_download_ms = start_ms - (target_ms * warmup_bars)
+                end_download_ms = end_ms
+                
+                self.setWindowTitle(f"Binance Futures BTC - 대상 시간틀({tf_key}) 데이터 확인/다운로드 중...")
+                QApplication.processEvents()
+                
+                self.download_data(start_download_ms, end_download_ms, timeframe=tf_key, quiet=True)
+                
+                self.setWindowTitle("Binance Futures BTC OHLCV Downloader")
+                QApplication.processEvents()
+
             if use_ls:
-                self.apply_wavetrend_ls_labeling(ch_len, avg_len, wt2_len, ob_level, os_level, cross_count)
+                self.apply_wavetrend_ls_labeling(tf_key, ch_len, avg_len, wt2_len, ob_level, os_level, cross_count)
             else:
                 if hasattr(self, 'current_df') and not self.current_df.empty:
                     self.populate_ui(self.current_df)
 
-    def apply_wavetrend_ls_labeling(self, ch_len, avg_len, wt2_len, ob_level, os_level, cross_count):
+    def apply_wavetrend_ls_labeling(self, tf_key, ch_len, avg_len, wt2_len, ob_level, os_level, cross_count):
         import os
         cache_file = TIMEFRAME_CONFIG[self.current_timeframe]['cache']
+        target_cache_file = TIMEFRAME_CONFIG[tf_key]['cache']
         if not os.path.exists(cache_file):
-            QMessageBox.warning(self, "오류", "캐시 파일이 없습니다. 데이터를 먼저 받아오세요.")
+            QMessageBox.warning(self, "오류", "현재 타임프레임의 캐시 파일이 없습니다.")
+            return
+        if not os.path.exists(target_cache_file):
+            QMessageBox.warning(self, "오류", f"대상 타임프레임({tf_key})의 캐시 파일이 없습니다. 먼저 해당 데이터를 받아오세요.")
             return
 
-        self.setWindowTitle("Binance Futures BTC - WaveTrend 라벨링 중...")
+        self.setWindowTitle(f"Binance Futures BTC - MTF WaveTrend({tf_key}) 라벨링 중...")
         QApplication.processEvents()
 
         try:
-            df = pd.read_csv(cache_file)
+            df_curr = pd.read_csv(cache_file)
+            df_target = pd.read_csv(target_cache_file)
             
-            wt1, wt2 = self.calculate_wavetrend(df, ch_len, avg_len, wt2_len)
+            wt1, wt2 = self.calculate_wavetrend(df_target, ch_len, avg_len, wt2_len)
+            df_target['mtf_wt1'] = wt1
+            df_target['mtf_wt2'] = wt2
             
-            prev_wt1 = wt1.shift(1)
-            prev_wt2 = wt2.shift(1)
+            # 완성된 캔들만 사용하기 위해 타임스탬프를 캔들 종료 시점으로 이동 (Lookahead Bias 방지)
+            target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+            df_target['timestamp_shifted'] = df_target['timestamp'] + target_ms
+            
+            df_curr_sorted = df_curr.sort_values('timestamp')
+            df_target_sorted = df_target[['timestamp_shifted', 'mtf_wt1', 'mtf_wt2']].sort_values('timestamp_shifted')
+            
+            merged = pd.merge_asof(
+                df_curr_sorted,
+                df_target_sorted,
+                left_on='timestamp',
+                right_on='timestamp_shifted',
+                direction='backward'
+            )
+            
+            merged_wt1 = merged['mtf_wt1']
+            merged_wt2 = merged['mtf_wt2']
+            prev_wt1 = merged_wt1.shift(1)
+            prev_wt2 = merged_wt2.shift(1)
             
             # 과매수/과매도 문턱값 적용 크로스오버 판별
-            cross_up = (prev_wt1 <= prev_wt2) & (wt1 > wt2) & (wt1 <= os_level)
-            cross_down = (prev_wt1 >= prev_wt2) & (wt1 < wt2) & (wt1 >= ob_level)
+            cross_up = (prev_wt1 <= prev_wt2) & (merged_wt1 > merged_wt2) & (merged_wt1 <= os_level)
+            cross_down = (prev_wt1 >= prev_wt2) & (merged_wt1 < merged_wt2) & (merged_wt1 >= ob_level)
             
             # 동일 방향 크로스 누적 횟수 기반 포지션 결정 상태 머신
-            labels = np.zeros(len(df), dtype=int)
+            labels = np.zeros(len(df_curr), dtype=int)
             current_position = 0
             long_signal_count = 0
             short_signal_count = 0
             
             cross_up_vals = cross_up.values
             cross_down_vals = cross_down.values
-            wt1_nan = wt1.isna().values
-            wt2_nan = wt2.isna().values
+            wt1_nan = merged_wt1.isna().values
+            wt2_nan = merged_wt2.isna().values
             
-            for i in range(len(df)):
+            for i in range(len(df_curr)):
                 if wt1_nan[i] or wt2_nan[i]:
                     labels[i] = 0
                     continue
@@ -1203,11 +1268,11 @@ class BinanceDataFetcher(QMainWindow):
                         
                 labels[i] = current_position
             
-            df['ls_label'] = labels
-            df.to_csv(cache_file, index=False)
+            df_curr['ls_label'] = labels
+            df_curr.to_csv(cache_file, index=False)
 
             QMessageBox.information(self, "라벨링 완료",
-                                    f"WaveTrend 기준으로 "
+                                    f"MTF WaveTrend({tf_key}) 기준으로 "
                                     f"LS 라벨 갱신 완료\n"
                                     f"Long: {(labels==1).sum()}개, Short: {(labels==-1).sum()}개")
 
@@ -1395,6 +1460,38 @@ class BinanceDataFetcher(QMainWindow):
         wt1 = ci.ewm(span=avg_len, adjust=False).mean()
         wt2 = wt1.rolling(wt2_len).mean()
         return wt1, wt2
+
+    def get_mtf_wavetrend_for_df(self, plot_df, tf_key, ch_len, avg_len, wt2_len):
+        import os
+        target_cache_file = TIMEFRAME_CONFIG[tf_key]['cache']
+        if not os.path.exists(target_cache_file):
+            return None, None
+            
+        df_target = pd.read_csv(target_cache_file)
+        if df_target.empty:
+            return None, None
+            
+        wt1, wt2 = self.calculate_wavetrend(df_target, ch_len, avg_len, wt2_len)
+        df_target['mtf_wt1'] = wt1
+        df_target['mtf_wt2'] = wt2
+        
+        # 완성된 캔들만 사용하기 위해 타임스탬프를 캔들 종료 시점으로 이동 (Lookahead Bias 방지)
+        target_ms = TIMEFRAME_CONFIG[tf_key]['ms']
+        df_target['timestamp_dt'] = pd.to_datetime(df_target['timestamp'] + target_ms, unit='ms') + pd.Timedelta(hours=9)
+        
+        temp_df = plot_df.copy().reset_index()
+        temp_df_sorted = temp_df.sort_values('timestamp')
+        df_target_sorted = df_target[['timestamp_dt', 'mtf_wt1', 'mtf_wt2']].sort_values('timestamp_dt')
+        
+        merged = pd.merge_asof(
+            temp_df_sorted,
+            df_target_sorted,
+            left_on='timestamp',
+            right_on='timestamp_dt',
+            direction='backward'
+        )
+        merged.set_index('timestamp', inplace=True)
+        return merged['mtf_wt1'], merged['mtf_wt2']
 
     def calculate_macd(self, series, fast_len, slow_len, sig_len):
         ema_fast = series.ewm(span=fast_len, adjust=False).mean()
@@ -2776,14 +2873,21 @@ class BinanceDataFetcher(QMainWindow):
         # WaveTrend 패널 렌더링
         if ax_wt is not None:
             for setting in self.wavetrend_settings:
-                if len(setting) == 6:
-                    ch_len, avg_len, wt2_len, ob_level, os_level, cross_count = setting
+                if len(setting) == 7:
+                    tf_key, ch_len, avg_len, wt2_len, ob_level, os_level, cross_count = setting
                 else:
-                    ch_len, avg_len, wt2_len, ob_level, os_level = setting
-                    cross_count = 1
-                wt1, wt2 = self.calculate_wavetrend(plot_df, ch_len, avg_len, wt2_len)
-                ax_wt.plot(x_nums, wt1.values, color='#00e676', linewidth=1.2, label='WT1')
-                ax_wt.plot(x_nums, wt2.values, color='#ff3d00', linewidth=1.2, linestyle='--', label='WT2')
+                    if len(setting) == 6:
+                        ch_len, avg_len, wt2_len, ob_level, os_level, cross_count = setting
+                    else:
+                        ch_len, avg_len, wt2_len, ob_level, os_level = setting
+                        cross_count = 1
+                    tf_key = self.current_timeframe
+                
+                wt1, wt2 = self.get_mtf_wavetrend_for_df(plot_df, tf_key, ch_len, avg_len, wt2_len)
+                if wt1 is None or wt1.isna().all():
+                    continue
+                ax_wt.plot(x_nums, wt1.values, color='#00e676', linewidth=1.2, label=f'WT1 ({tf_key})')
+                ax_wt.plot(x_nums, wt2.values, color='#ff3d00', linewidth=1.2, linestyle='--', label=f'WT2 ({tf_key})')
                 
                 ax_wt.axhline(y=ob_level, color='#ff1744', linestyle=':', linewidth=0.8, alpha=0.7)
                 ax_wt.axhline(y=os_level, color='#00e676', linestyle=':', linewidth=0.8, alpha=0.7)
