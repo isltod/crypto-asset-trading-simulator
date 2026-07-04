@@ -65,6 +65,7 @@ db.serialize(() => {
         wt_sig INTEGER NOT NULL DEFAULT 4,
         wt_ob INTEGER NOT NULL DEFAULT 53,
         wt_allow_repaint INTEGER NOT NULL DEFAULT 0,
+        wt_ignore_obos INTEGER NOT NULL DEFAULT 0,
         symbol TEXT NOT NULL DEFAULT 'BTCUSDT',
         macd_tf TEXT NOT NULL DEFAULT '5m',
         macd_fast INTEGER NOT NULL DEFAULT 12,
@@ -136,6 +137,7 @@ db.serialize(() => {
     db.run(`ALTER TABLE accounts ADD COLUMN stoch_allow_repaint INTEGER DEFAULT 0`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN wt_tf TEXT DEFAULT '5m'`, (err) => {});
     db.run(`ALTER TABLE accounts ADD COLUMN wt_allow_repaint INTEGER DEFAULT 0`, (err) => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN wt_ignore_obos INTEGER DEFAULT 0`, (err) => {});
 });
 
 // Auth Middleware
@@ -222,6 +224,7 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         wt_sig, 
         wt_ob,
         wt_allow_repaint,
+        wt_ignore_obos,
         symbol,
         macd_tf,
         macd_fast,
@@ -251,6 +254,7 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         const updatedWtSig = wt_sig !== undefined ? wt_sig : row.wt_sig;
         const updatedWtOb = wt_ob !== undefined ? wt_ob : row.wt_ob;
         const updatedWtAllowRepaint = wt_allow_repaint !== undefined ? (wt_allow_repaint ? 1 : 0) : row.wt_allow_repaint;
+        const updatedWtIgnoreObos = wt_ignore_obos !== undefined ? (wt_ignore_obos ? 1 : 0) : row.wt_ignore_obos;
         const updatedSymbol = symbol !== undefined ? symbol : row.symbol;
         const updatedMacdTf = macd_tf !== undefined ? macd_tf : row.macd_tf;
         const updatedMacdFast = macd_fast !== undefined ? macd_fast : row.macd_fast;
@@ -267,14 +271,14 @@ app.post(`${BASE_PATH}/api/account/config`, authenticateToken, (req, res) => {
         db.run(`UPDATE accounts SET 
             leverage = ?, tpsl_enabled = ?, tp_roi = ?, sl_roi = ?, 
             auto_trade_enabled = ?, signal_type = ?, 
-            wt_tf = ?, wt_n1 = ?, wt_n2 = ?, wt_sig = ?, wt_ob = ?, wt_allow_repaint = ?,
+            wt_tf = ?, wt_n1 = ?, wt_n2 = ?, wt_sig = ?, wt_ob = ?, wt_allow_repaint = ?, wt_ignore_obos = ?,
             symbol = ?, macd_tf = ?, macd_fast = ?, macd_slow = ?, macd_sig = ?, macd_allow_repaint = ?,
             stoch_tf = ?, stoch_rsi_len = ?, stoch_len = ?, stoch_k = ?, stoch_d = ?, stoch_allow_repaint = ?
             WHERE user_id = ?`, 
             [
                 updatedLeverage, updatedTpsl, updatedTp, updatedSl, 
                 updatedAutoTrade, updatedSignalType, 
-                updatedWtTf, updatedWtN1, updatedWtN2, updatedWtSig, updatedWtOb, updatedWtAllowRepaint, 
+                updatedWtTf, updatedWtN1, updatedWtN2, updatedWtSig, updatedWtOb, updatedWtAllowRepaint, updatedWtIgnoreObos,
                 updatedSymbol, updatedMacdTf, updatedMacdFast, updatedMacdSlow, updatedMacdSig, updatedMacdAllowRepaint,
                 updatedStochTf, updatedStochRsiLen, updatedStochLen, updatedStochK, updatedStochD, updatedStochAllowRepaint,
                 userId
@@ -1079,9 +1083,10 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
 
                         if (prevWt1 !== undefined && prevWt2 !== undefined && currWt1 !== undefined && currWt2 !== undefined &&
                             prevWt1 !== null && prevWt2 !== null && currWt1 !== null && currWt2 !== null) {
-                            if (prevWt1 < prevWt2 && currWt1 > currWt2 && currWt1 < -obLevel) {
+                            const ignoreObos = account.wt_ignore_obos === 1;
+                            if (prevWt1 < prevWt2 && currWt1 > currWt2 && (ignoreObos || currWt1 < -obLevel)) {
                                 signal = 'LONG';
-                            } else if (prevWt1 > prevWt2 && currWt1 < currWt2 && currWt1 > obLevel) {
+                            } else if (prevWt1 > prevWt2 && currWt1 < currWt2 && (ignoreObos || currWt1 > obLevel)) {
                                 signal = 'SHORT';
                             }
                         }
