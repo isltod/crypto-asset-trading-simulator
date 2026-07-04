@@ -88,6 +88,7 @@ let WT_AVG_LEN = 21;
 let WT_SIG_LEN = 4;
 let WT_OB_LEVEL = 53;
 let WT_ALLOW_REPAINT = false;
+let WT_IGNORE_OBOS = false;
 let wtPriceLines = [];
 
 // Supertrend State & Constants
@@ -488,7 +489,7 @@ function applyIndicatorMarkers() {
 
             const time = formattedData[i].time;
 
-            if (prevWt1 < prevWt2 && currWt1 > currWt2 && currWt1 < -WT_OB_LEVEL) {
+            if (prevWt1 < prevWt2 && currWt1 > currWt2 && (WT_IGNORE_OBOS || currWt1 < -WT_OB_LEVEL)) {
                 markers.push({
                     time: time,
                     position: 'belowBar',
@@ -505,7 +506,7 @@ function applyIndicatorMarkers() {
                     text: 'L',
                     size: 1
                 });
-            } else if (prevWt1 > prevWt2 && currWt1 < currWt2 && currWt1 > WT_OB_LEVEL) {
+            } else if (prevWt1 > prevWt2 && currWt1 < currWt2 && (WT_IGNORE_OBOS || currWt1 > WT_OB_LEVEL)) {
                 markers.push({
                     time: time,
                     position: 'aboveBar',
@@ -986,6 +987,7 @@ async function fetchAccountData() {
         WT_SIG_LEN = acc.wt_sig || 4;
         WT_OB_LEVEL = acc.wt_ob || 53;
         WT_ALLOW_REPAINT = acc.wt_allow_repaint === 1;
+        WT_IGNORE_OBOS = acc.wt_ignore_obos === 1;
 
         MACD_TF = acc.macd_tf || '5m';
         MACD_FAST = acc.macd_fast || 12;
@@ -1012,6 +1014,8 @@ async function fetchAccountData() {
         if (wtObInput) wtObInput.value = WT_OB_LEVEL;
         const wtRepaintInput = document.getElementById('wt-allow-repaint');
         if (wtRepaintInput) wtRepaintInput.checked = WT_ALLOW_REPAINT;
+        const wtIgnoreObosInput = document.getElementById('wt-ignore-obos');
+        if (wtIgnoreObosInput) wtIgnoreObosInput.checked = WT_IGNORE_OBOS;
 
         const macdTfInput = document.getElementById('macd-tf');
         if (macdTfInput) macdTfInput.value = MACD_TF;
@@ -1094,6 +1098,7 @@ async function updateConfig() {
     const wtSig = parseInt(document.getElementById('wt-sig')?.value || WT_SIG_LEN, 10);
     const wtOb = parseInt(document.getElementById('wt-ob')?.value || WT_OB_LEVEL, 10);
     const wtAllowRepaint = document.getElementById('wt-allow-repaint')?.checked || false;
+    const wtIgnoreObos = document.getElementById('wt-ignore-obos')?.checked || false;
 
     const macdTf = document.getElementById('macd-tf')?.value || MACD_TF;
     const macdFast = parseInt(document.getElementById('macd-fast')?.value || MACD_FAST, 10);
@@ -1122,6 +1127,7 @@ async function updateConfig() {
             wt_sig: wtSig,
             wt_ob: wtOb,
             wt_allow_repaint: wtAllowRepaint,
+            wt_ignore_obos: wtIgnoreObos,
             macd_tf: macdTf,
             macd_fast: macdFast,
             macd_slow: macdSlow,
@@ -1353,6 +1359,18 @@ async function init() {
     if (wtRepaintInput) {
         wtRepaintInput.addEventListener('change', async (e) => {
             WT_ALLOW_REPAINT = e.target.checked;
+            if (window.klineData) updateChartSeries();
+            saveUIConfig();
+            if (authToken) {
+                await updateConfig();
+            }
+        });
+    }
+
+    const wtIgnoreObosInput = document.getElementById('wt-ignore-obos');
+    if (wtIgnoreObosInput) {
+        wtIgnoreObosInput.addEventListener('change', async (e) => {
+            WT_IGNORE_OBOS = e.target.checked;
             if (window.klineData) updateChartSeries();
             saveUIConfig();
             if (authToken) {
@@ -2381,6 +2399,7 @@ function saveUIConfig() {
         wtSig: parseInt(document.getElementById('wt-sig')?.value || '4', 10),
         wtOb: parseInt(document.getElementById('wt-ob')?.value || '53', 10),
         wtAllowRepaint: document.getElementById('wt-allow-repaint')?.checked || false,
+        wtIgnoreObos: document.getElementById('wt-ignore-obos')?.checked || false,
         showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
         supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
         supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0'),
@@ -2443,6 +2462,10 @@ function loadUIConfig() {
             if (typeof config.wtAllowRepaint === 'boolean' && document.getElementById('wt-allow-repaint')) {
                 document.getElementById('wt-allow-repaint').checked = config.wtAllowRepaint;
                 WT_ALLOW_REPAINT = config.wtAllowRepaint;
+            }
+            if (typeof config.wtIgnoreObos === 'boolean' && document.getElementById('wt-ignore-obos')) {
+                document.getElementById('wt-ignore-obos').checked = config.wtIgnoreObos;
+                WT_IGNORE_OBOS = config.wtIgnoreObos;
             }
             if (typeof config.showSupertrend === 'boolean' && document.getElementById('toggle-supertrend')) {
                 document.getElementById('toggle-supertrend').checked = config.showSupertrend;
