@@ -1,5 +1,0 @@
-Host Name: OCI 2 Freemium
-IP Address: 168.107.3.163
-Port: 22
-User Name: ubuntu
-Private Key File: D:\Warez\Oracle Cloud 관련\freemium.key.ppk
