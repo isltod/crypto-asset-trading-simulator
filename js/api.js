@@ -83,3 +83,12 @@ export async function fetchKlines(symbol, interval = '1m') {
     const res = await fetch(`${BINANCE_REST_URL}/klines?symbol=${symbol}&interval=${interval}`);
     return await res.json();
 }
+
+export async function fetchMTFKlines(symbol, timeframe = '15m') {
+    try {
+        const res = await fetch(`${BINANCE_REST_URL}/mtf-cache?symbol=${symbol}&timeframe=${timeframe}`);
+        return await res.json();
+    } catch (e) {
+        return [];
+    }
+}

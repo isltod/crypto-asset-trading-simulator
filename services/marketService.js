@@ -51,7 +51,8 @@ async function initKlineHistories() {
                 open: parseFloat(d[1]),
                 high: parseFloat(d[2]),
                 low: parseFloat(d[3]),
-                close: parseFloat(d[4])
+                close: parseFloat(d[4]),
+                volume: parseFloat(d[5]) || 0
             }));
             console.log(`[Init] Loaded ${klineHistories[symbol].length} klines for ${symbol}`);
         } catch (e) {
@@ -69,7 +70,8 @@ async function initKlineHistories() {
                     open: parseFloat(d[1]),
                     high: parseFloat(d[2]),
                     low: parseFloat(d[3]),
-                    close: parseFloat(d[4])
+                    close: parseFloat(d[4]),
+                    volume: parseFloat(d[5]) || 0
                 }));
             } catch (e) {
                 console.error(`[Init] Failed to load ${tf} klines for ${symbol}:`, e.message);
@@ -82,6 +84,7 @@ async function initKlineHistories() {
 function updateKlineTick(symbol, message) {
     lastBinanceMessageTime = Date.now();
     const currentPrice = parseFloat(message.k.c);
+    const tickVolume = parseFloat(message.k.v) || 0;
     latestPrices[symbol] = currentPrice;
 
     if (klineHistories[symbol]) {
@@ -90,7 +93,8 @@ function updateKlineTick(symbol, message) {
             open: parseFloat(message.k.o),
             high: parseFloat(message.k.h),
             low: parseFloat(message.k.l),
-            close: currentPrice
+            close: currentPrice,
+            volume: tickVolume
         };
         const history = klineHistories[symbol];
         const lastIdx = history.length - 1;
@@ -117,13 +121,15 @@ function updateKlineTick(symbol, message) {
                     currentMtf.high = Math.max(currentMtf.high, tick.high);
                     currentMtf.low = Math.min(currentMtf.low, tick.low);
                     currentMtf.close = tick.close;
+                    currentMtf.volume = (currentMtf.volume || 0) + tickVolume;
                 } else {
                     mtfHistory.push({
                         time: key,
                         open: tick.open,
                         high: tick.high,
                         low: tick.low,
-                        close: tick.close
+                        close: tick.close,
+                        volume: tickVolume
                     });
                     if (mtfHistory.length > 500) {
                         mtfHistory.shift();

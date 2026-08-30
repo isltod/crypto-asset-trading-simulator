@@ -55,7 +55,14 @@ router.post('/config', authenticateToken, (req, res) => {
         stoch_len,
         stoch_k,
         stoch_d,
-        stoch_allow_repaint
+        stoch_allow_repaint,
+        v_tf,
+        v_vwap_window,
+        v_vwap_sigma,
+        v_vol_lookback,
+        v_vol_mult,
+        v_wick_ratio,
+        v_allow_repaint
     } = req.body;
 
     db.get(`SELECT * FROM accounts WHERE user_id = ?`, [userId], (err, row) => {
@@ -86,13 +93,21 @@ router.post('/config', authenticateToken, (req, res) => {
         const updatedStochK = stoch_k !== undefined ? stoch_k : row.stoch_k;
         const updatedStochD = stoch_d !== undefined ? stoch_d : row.stoch_d;
         const updatedStochAllowRepaint = stoch_allow_repaint !== undefined ? (stoch_allow_repaint ? 1 : 0) : row.stoch_allow_repaint;
+        const updatedVTf = v_tf !== undefined ? v_tf : (row.v_tf || '15m');
+        const updatedVVwapWindow = v_vwap_window !== undefined ? v_vwap_window : (row.v_vwap_window || 96);
+        const updatedVVwapSigma = v_vwap_sigma !== undefined ? v_vwap_sigma : (row.v_vwap_sigma !== undefined ? row.v_vwap_sigma : 2.0);
+        const updatedVVolLookback = v_vol_lookback !== undefined ? v_vol_lookback : (row.v_vol_lookback || 30);
+        const updatedVVolMult = v_vol_mult !== undefined ? v_vol_mult : (row.v_vol_mult !== undefined ? row.v_vol_mult : 1.8);
+        const updatedVWickRatio = v_wick_ratio !== undefined ? v_wick_ratio : (row.v_wick_ratio !== undefined ? row.v_wick_ratio : 0.8);
+        const updatedVAllowRepaint = v_allow_repaint !== undefined ? (v_allow_repaint ? 1 : 0) : (row.v_allow_repaint || 0);
 
         db.run(`UPDATE accounts SET 
             leverage = ?, tpsl_enabled = ?, tp_roi = ?, sl_roi = ?, 
             auto_trade_enabled = ?, signal_type = ?, 
             wt_tf = ?, wt_n1 = ?, wt_n2 = ?, wt_sig = ?, wt_ob = ?, wt_allow_repaint = ?, wt_ignore_obos = ?,
             symbol = ?, macd_tf = ?, macd_fast = ?, macd_slow = ?, macd_sig = ?, macd_allow_repaint = ?,
-            stoch_tf = ?, stoch_rsi_len = ?, stoch_len = ?, stoch_k = ?, stoch_d = ?, stoch_allow_repaint = ?
+            stoch_tf = ?, stoch_rsi_len = ?, stoch_len = ?, stoch_k = ?, stoch_d = ?, stoch_allow_repaint = ?,
+            v_tf = ?, v_vwap_window = ?, v_vwap_sigma = ?, v_vol_lookback = ?, v_vol_mult = ?, v_wick_ratio = ?, v_allow_repaint = ?
             WHERE user_id = ?`, 
             [
                 updatedLeverage, updatedTpsl, updatedTp, updatedSl, 
@@ -100,6 +115,7 @@ router.post('/config', authenticateToken, (req, res) => {
                 updatedWtTf, updatedWtN1, updatedWtN2, updatedWtSig, updatedWtOb, updatedWtAllowRepaint, updatedWtIgnoreObos,
                 updatedSymbol, updatedMacdTf, updatedMacdFast, updatedMacdSlow, updatedMacdSig, updatedMacdAllowRepaint,
                 updatedStochTf, updatedStochRsiLen, updatedStochLen, updatedStochK, updatedStochD, updatedStochAllowRepaint,
+                updatedVTf, updatedVVwapWindow, updatedVVwapSigma, updatedVVolLookback, updatedVVolMult, updatedVWickRatio, updatedVAllowRepaint,
                 userId
             ], 
             (err) => {

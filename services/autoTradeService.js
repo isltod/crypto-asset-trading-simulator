@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { db } = require('../config/db');
 const { klineHistories, klineHistoriesMTF } = require('./marketService');
-const { aggregateKlines, calculateWaveTrend, calculateMACDForKlines, calculateStochRSI } = require('./indicatorService');
+const { aggregateKlines, calculateWaveTrend, calculateMACDForKlines, calculateStochRSI, calculateVWAPClimax } = require('./indicatorService');
 const { openPositionInternal, closePosition } = require('./tradeService');
 
 let ort = null;
@@ -133,7 +133,7 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
     const history = klineHistories[symbol];
     if (!history || history.length < 50) return;
 
-    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd', 'stoch_rsi')`, (err, accounts) => {
+    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd', 'stoch_rsi', 'v_climax')`, (err, accounts) => {
         if (err || !accounts || accounts.length === 0) return;
 
         accounts.forEach(async (account) => {
@@ -306,6 +306,48 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                             } else if (prevK >= prevD && currK < currD && (currK >= 80 || prevK >= 80)) {
                                 signal = 'SHORT';
                             }
+                        }
+                    }
+                }
+            } else if (account.signal_type === 'v_climax') {
+                const tf = account.v_tf || '15m';
+                const window = account.v_vwap_window || 96;
+                const sigma = account.v_vwap_sigma !== undefined ? account.v_vwap_sigma : 2.0;
+                const volLookback = account.v_vol_lookback || 30;
+                const volMult = account.v_vol_mult !== undefined ? account.v_vol_mult : 1.8;
+                const wickRatio = account.v_wick_ratio !== undefined ? account.v_wick_ratio : 0.8;
+                const allowRepaint = account.v_allow_repaint === 1;
+
+                if (!isClosed && !allowRepaint) return;
+
+                const aggregated = aggregateKlines(history, tf, symbol, klineHistoriesMTF);
+                const vResult = calculateVWAPClimax(aggregated, window, sigma, volLookback, volMult, wickRatio);
+
+                const currentTick = history[history.length - 1];
+                if (currentTick) {
+                    const tfMap = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400 };
+                    const duration = tfMap[tf] || 900;
+                    const tClose = currentTick.time + 60;
+
+                    if (allowRepaint || (tClose % duration === 0 && isClosed)) {
+                        let sigVal = 0;
+                        if (allowRepaint) {
+                            const lastIdx = vResult.signals.length - 1;
+                            if (lastIdx >= 0) {
+                                sigVal = vResult.signals[lastIdx];
+                            }
+                        } else {
+                            const tStartCurr = tClose - duration;
+                            const idxCurr = aggregated.findIndex(k => k.time === tStartCurr);
+                            if (idxCurr !== -1) {
+                                sigVal = vResult.signals[idxCurr];
+                            }
+                        }
+
+                        if (sigVal === 1) {
+                            signal = 'LONG';
+                        } else if (sigVal === -1) {
+                            signal = 'SHORT';
                         }
                     }
                 }

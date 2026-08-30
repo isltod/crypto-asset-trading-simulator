@@ -45,6 +45,13 @@ db.serialize(() => {
         stoch_k INTEGER NOT NULL DEFAULT 3,
         stoch_d INTEGER NOT NULL DEFAULT 3,
         stoch_allow_repaint INTEGER NOT NULL DEFAULT 0,
+        v_tf TEXT NOT NULL DEFAULT '15m',
+        v_vwap_window INTEGER NOT NULL DEFAULT 96,
+        v_vwap_sigma REAL NOT NULL DEFAULT 2.0,
+        v_vol_lookback INTEGER NOT NULL DEFAULT 30,
+        v_vol_mult REAL NOT NULL DEFAULT 1.8,
+        v_wick_ratio REAL NOT NULL DEFAULT 0.8,
+        v_allow_repaint INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
 
@@ -107,6 +114,13 @@ db.serialize(() => {
     db.run(`ALTER TABLE accounts ADD COLUMN wt_tf TEXT DEFAULT '5m'`, () => {});
     db.run(`ALTER TABLE accounts ADD COLUMN wt_allow_repaint INTEGER DEFAULT 0`, () => {});
     db.run(`ALTER TABLE accounts ADD COLUMN wt_ignore_obos INTEGER DEFAULT 0`, () => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN v_tf TEXT DEFAULT '15m'`, () => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN v_vwap_window INTEGER DEFAULT 96`, () => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN v_vwap_sigma REAL DEFAULT 2.0`, () => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN v_vol_lookback INTEGER DEFAULT 30`, () => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN v_vol_mult REAL DEFAULT 1.8`, () => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN v_wick_ratio REAL DEFAULT 0.8`, () => {});
+    db.run(`ALTER TABLE accounts ADD COLUMN v_allow_repaint INTEGER DEFAULT 0`, () => {});
 });
 
 module.exports = { db, INITIAL_CAPITAL };

@@ -32,7 +32,8 @@ export function connectWebSocket(symbol, onAccountRefresh) {
                 open: parseFloat(kline.o),
                 high: parseFloat(kline.h),
                 low: parseFloat(kline.l),
-                close: parseFloat(kline.c)
+                close: parseFloat(kline.c),
+                volume: parseFloat(kline.v) || 0
             };
             if (state.candleSeries) {
                 state.candleSeries.update(tick);

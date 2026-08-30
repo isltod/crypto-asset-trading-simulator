@@ -1,5 +1,5 @@
 const express = require('express');
-const { getJson, klineHistories } = require('../services/marketService');
+const { getJson, klineHistories, klineHistoriesMTF } = require('../services/marketService');
 
 const router = express.Router();
 
@@ -18,7 +18,7 @@ router.get('/klines', async (req, res) => {
     const symbol = (req.query.symbol || 'BTCUSDT').toUpperCase();
     const interval = req.query.interval || '1m';
 
-    // If 1m klines requested and backend already has history, serve directly from backend memory
+    // If 1m klines requested and backend already has history, serve directly from backend memory with volume
     if (interval === '1m' && klineHistories[symbol] && klineHistories[symbol].length > 0) {
         const rawFormat = klineHistories[symbol].map(k => [
             k.time * 1000,
@@ -26,7 +26,22 @@ router.get('/klines', async (req, res) => {
             k.high.toString(),
             k.low.toString(),
             k.close.toString(),
-            "0",
+            (k.volume !== undefined ? k.volume.toString() : "0"),
+            k.time * 1000 + 59999,
+            "0", 0, "0", "0", "0"
+        ]);
+        return res.json(rawFormat);
+    }
+
+    // If MTF klines requested and backend memory has it, serve directly
+    if (klineHistoriesMTF[symbol] && klineHistoriesMTF[symbol][interval] && klineHistoriesMTF[symbol][interval].length > 0) {
+        const rawFormat = klineHistoriesMTF[symbol][interval].map(k => [
+            k.time * 1000,
+            k.open.toString(),
+            k.high.toString(),
+            k.low.toString(),
+            k.close.toString(),
+            (k.volume !== undefined ? k.volume.toString() : "0"),
             k.time * 1000 + 59999,
             "0", 0, "0", "0", "0"
         ]);
@@ -48,6 +63,17 @@ router.get('/klines', async (req, res) => {
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
+});
+
+// Direct MTF kline cache endpoint for frontend indicators
+router.get('/mtf-cache', (req, res) => {
+    const symbol = (req.query.symbol || 'BTCUSDT').toUpperCase();
+    const tf = req.query.timeframe || '15m';
+
+    if (klineHistoriesMTF[symbol] && klineHistoriesMTF[symbol][tf]) {
+        return res.json(klineHistoriesMTF[symbol][tf]);
+    }
+    return res.json([]);
 });
 
 module.exports = router;

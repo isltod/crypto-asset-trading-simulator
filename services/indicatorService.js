@@ -86,16 +86,19 @@ function aggregateKlines(history, timeframe, symbol = null, klineHistoriesMTF = 
         const close = group[group.length - 1].close;
         let high = -Infinity;
         let low = Infinity;
+        let volume = 0;
         for (const tick of group) {
             if (tick.high > high) high = tick.high;
             if (tick.low < low) low = tick.low;
+            volume += (tick.volume || 0);
         }
         aggregated.push({
             time: key,
             open,
             high,
             low,
-            close
+            close,
+            volume
         });
     }
 
@@ -107,6 +110,82 @@ function aggregateKlines(history, timeframe, symbol = null, klineHistoriesMTF = 
     }
 
     return aggregated;
+}
+
+function calculateVWAPClimax(klines, window = 96, sigma = 2.0, volLookback = 30, volMult = 1.8, wickRatio = 0.8) {
+    const len = klines.length;
+    const vwapData = [];
+    const upperBandData = [];
+    const lowerBandData = [];
+    const signals = new Array(len).fill(0);
+
+    if (len === 0) {
+        return { vwapData, upperBandData, lowerBandData, signals };
+    }
+
+    const typicalPrices = klines.map(k => (k.high + k.low + k.close) / 3.0);
+    const volumes = klines.map(k => (k.volume !== undefined && k.volume > 0) ? k.volume : 1.0);
+    const pv = typicalPrices.map((tp, idx) => tp * volumes[idx]);
+
+    for (let i = 0; i < len; i++) {
+        const t = klines[i].time;
+        const currentWindow = Math.min(i + 1, window);
+
+        let sumPV = 0;
+        let sumVol = 0;
+        let tpSum = 0;
+        for (let j = i - currentWindow + 1; j <= i; j++) {
+            sumPV += pv[j];
+            sumVol += volumes[j];
+            tpSum += typicalPrices[j];
+        }
+
+        const tpMean = tpSum / currentWindow;
+        const vwapVal = sumVol > 0 ? (sumPV / sumVol) : tpMean;
+
+        let tpSqDiff = 0;
+        for (let j = i - currentWindow + 1; j <= i; j++) {
+            tpSqDiff += Math.pow(typicalPrices[j] - tpMean, 2);
+        }
+        const stdVal = currentWindow > 1 ? Math.sqrt(tpSqDiff / currentWindow) : (typicalPrices[i] * 0.005);
+
+        const upperVal = vwapVal + sigma * stdVal;
+        const lowerVal = vwapVal - sigma * stdVal;
+
+        vwapData.push({ time: t, value: vwapVal });
+        upperBandData.push({ time: t, value: upperVal });
+        lowerBandData.push({ time: t, value: lowerVal });
+
+        const currentVolLookback = Math.min(i + 1, volLookback);
+        if (currentVolLookback >= 3) {
+            let sumVolMA = 0;
+            for (let j = i - currentVolLookback + 1; j <= i; j++) {
+                sumVolMA += volumes[j];
+            }
+            const volMA = sumVolMA / currentVolLookback;
+            const volRatio = volumes[i] / (volMA + 1e-8);
+
+            const open = klines[i].open;
+            const close = klines[i].close;
+            const high = klines[i].high;
+            const low = klines[i].low;
+
+            const body = Math.abs(close - open);
+            const lowerWick = Math.min(open, close) - low;
+            const upperWick = high - Math.max(open, close);
+
+            // Long condition
+            if (close < lowerVal && volRatio >= volMult && lowerWick >= body * wickRatio) {
+                signals[i] = 1;
+            }
+            // Short condition
+            else if (close > upperVal && volRatio >= volMult && upperWick >= body * wickRatio) {
+                signals[i] = -1;
+            }
+        }
+    }
+
+    return { vwapData, upperBandData, lowerBandData, signals };
 }
 
 function calculateMACDForKlines(klines, fast, slow, sig) {
@@ -207,5 +286,6 @@ module.exports = {
     aggregateKlines,
     calculateMACDForKlines,
     calculateRSI,
-    calculateStochRSI
+    calculateStochRSI,
+    calculateVWAPClimax
 };
