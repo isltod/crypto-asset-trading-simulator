@@ -50,7 +50,7 @@ router.post('/close', authenticateToken, (req, res) => {
 });
 
 // Trade history list
-router.get('/history', authenticateToken, (req, res) => {
+router.get(['/', '/history'], authenticateToken, (req, res) => {
     const userId = req.user.userId;
     db.all(`SELECT * FROM trade_history WHERE user_id = ? ORDER BY exit_time DESC`, [userId], (err, rows) => {
         res.json(rows || []);
@@ -58,7 +58,7 @@ router.get('/history', authenticateToken, (req, res) => {
 });
 
 // Clear trade history
-router.delete('/history', authenticateToken, (req, res) => {
+router.delete(['/', '/history'], authenticateToken, (req, res) => {
     const userId = req.user.userId;
     db.run(`DELETE FROM trade_history WHERE user_id = ?`, [userId], (err) => {
         res.json({ message: "History cleared" });
