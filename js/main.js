@@ -11,7 +11,8 @@ import {
     closeTrade, 
     fetchBackendStatus, 
     fetchSymbols, 
-    fetchKlines 
+    fetchKlines,
+    fetchMTFKlines 
 } from './api.js';
 import { 
     initCharts, 
@@ -115,13 +116,28 @@ async function loadSymbols() {
 async function loadChartData(symbol) {
     if (state.ws) { state.ws.close(); state.ws = null; }
     try {
-        const data = await fetchKlines(symbol, '1m');
+        const [data, mtf15mData, mtf5mData] = await Promise.all([
+            fetchKlines(symbol, '1m'),
+            fetchMTFKlines(symbol, '15m'),
+            fetchMTFKlines(symbol, '5m')
+        ]);
+
         if (!Array.isArray(data)) {
             throw new Error('Invalid kline response: ' + JSON.stringify(data));
         }
 
+        state.mtfKlines = {
+            '15m': Array.isArray(mtf15mData) ? mtf15mData : [],
+            '5m': Array.isArray(mtf5mData) ? mtf5mData : []
+        };
+
         state.klineData = data.map(d => ({
-            time: Math.floor(d[0] / 1000), open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4])
+            time: Math.floor(d[0] / 1000), 
+            open: parseFloat(d[1]), 
+            high: parseFloat(d[2]), 
+            low: parseFloat(d[3]), 
+            close: parseFloat(d[4]),
+            volume: parseFloat(d[5]) || 0
         }));
         updateChartSeries();
         state.lastClose = state.klineData[state.klineData.length - 1].close;
@@ -169,6 +185,14 @@ async function loadAccountState() {
         state.STOCH_D = acc.stoch_d || 3;
         state.STOCH_ALLOW_REPAINT = acc.stoch_allow_repaint === 1;
 
+        state.V_TF = acc.v_tf || '15m';
+        state.V_VWAP_WINDOW = acc.v_vwap_window || 96;
+        state.V_VWAP_SIGMA = acc.v_vwap_sigma !== undefined ? acc.v_vwap_sigma : 2.0;
+        state.V_VOL_LOOKBACK = acc.v_vol_lookback || 30;
+        state.V_VOL_MULT = acc.v_vol_mult !== undefined ? acc.v_vol_mult : 1.8;
+        state.V_WICK_RATIO = acc.v_wick_ratio !== undefined ? acc.v_wick_ratio : 0.8;
+        state.V_ALLOW_REPAINT = acc.v_allow_repaint === 1;
+
         const wtTfInput = document.getElementById('wt-tf');
         if (wtTfInput) wtTfInput.value = state.WT_TF;
         const wtN1Input = document.getElementById('wt-n1');
@@ -207,6 +231,21 @@ async function loadAccountState() {
         if (stochDInput) stochDInput.value = state.STOCH_D;
         const stochRepaintInput = document.getElementById('stoch-allow-repaint');
         if (stochRepaintInput) stochRepaintInput.checked = state.STOCH_ALLOW_REPAINT;
+
+        const vTfInput = document.getElementById('v-tf');
+        if (vTfInput) vTfInput.value = state.V_TF;
+        const vVwapWindowInput = document.getElementById('v-vwap-window');
+        if (vVwapWindowInput) vVwapWindowInput.value = state.V_VWAP_WINDOW;
+        const vVwapSigmaInput = document.getElementById('v-vwap-sigma');
+        if (vVwapSigmaInput) vVwapSigmaInput.value = state.V_VWAP_SIGMA;
+        const vVolLookbackInput = document.getElementById('v-vol-lookback');
+        if (vVolLookbackInput) vVolLookbackInput.value = state.V_VOL_LOOKBACK;
+        const vVolMultInput = document.getElementById('v-vol-mult');
+        if (vVolMultInput) vVolMultInput.value = state.V_VOL_MULT;
+        const vWickRatioInput = document.getElementById('v-wick-ratio');
+        if (vWickRatioInput) vWickRatioInput.value = state.V_WICK_RATIO;
+        const vRepaintInput = document.getElementById('v-allow-repaint');
+        if (vRepaintInput) vRepaintInput.checked = state.V_ALLOW_REPAINT;
 
         const capInput = document.getElementById('capital-input');
         if (capInput) capInput.value = state.virtualCapital.toFixed(2);
@@ -262,6 +301,14 @@ async function updateConfig() {
     const stochD = parseInt(document.getElementById('stoch-d')?.value || state.STOCH_D, 10);
     const stochAllowRepaint = document.getElementById('stoch-allow-repaint')?.checked || false;
 
+    const vTf = document.getElementById('v-tf')?.value || state.V_TF;
+    const vVwapWindow = parseInt(document.getElementById('v-vwap-window')?.value || state.V_VWAP_WINDOW, 10);
+    const vVwapSigma = parseFloat(document.getElementById('v-vwap-sigma')?.value || state.V_VWAP_SIGMA);
+    const vVolLookback = parseInt(document.getElementById('v-vol-lookback')?.value || state.V_VOL_LOOKBACK, 10);
+    const vVolMult = parseFloat(document.getElementById('v-vol-mult')?.value || state.V_VOL_MULT);
+    const vWickRatio = parseFloat(document.getElementById('v-wick-ratio')?.value || state.V_WICK_RATIO);
+    const vAllowRepaint = document.getElementById('v-allow-repaint')?.checked || false;
+
     try {
         await saveAccountConfig({
             leverage: parseInt(document.getElementById('leverage-input').value) || 1,
@@ -288,6 +335,13 @@ async function updateConfig() {
             stoch_k: stochK,
             stoch_d: stochD,
             stoch_allow_repaint: stochAllowRepaint,
+            v_tf: vTf,
+            v_vwap_window: vVwapWindow,
+            v_vwap_sigma: vVwapSigma,
+            v_vol_lookback: vVolLookback,
+            v_vol_mult: vVolMult,
+            v_wick_ratio: vWickRatio,
+            v_allow_repaint: vAllowRepaint,
             symbol: state.currentSymbol
         });
         state.autoTradeEnabled = toggleAutoTrade ? toggleAutoTrade.checked : false;
@@ -344,7 +398,17 @@ function saveUIConfig() {
         stochRsiLen: parseInt(document.getElementById('stoch-rsi-len')?.value || '14', 10),
         stochLen: parseInt(document.getElementById('stoch-len')?.value || '14', 10),
         stochK: parseInt(document.getElementById('stoch-k')?.value || '3', 10),
-        stochD: parseInt(document.getElementById('stoch-d')?.value || '3', 10)
+        stochD: parseInt(document.getElementById('stoch-d')?.value || '3', 10),
+        showVWAP: document.getElementById('toggle-vwap')?.checked || false,
+        showVol: document.getElementById('toggle-vol')?.checked || false,
+        volHeight: parseInt(document.getElementById('vol-chart-container')?.style.height || '130', 10),
+        vTF: document.getElementById('v-tf')?.value || '15m',
+        vVwapWindow: parseInt(document.getElementById('v-vwap-window')?.value || '96', 10),
+        vVwapSigma: parseFloat(document.getElementById('v-vwap-sigma')?.value || '2.0'),
+        vVolLookback: parseInt(document.getElementById('v-vol-lookback')?.value || '30', 10),
+        vVolMult: parseFloat(document.getElementById('v-vol-mult')?.value || '1.8'),
+        vWickRatio: parseFloat(document.getElementById('v-wick-ratio')?.value || '0.8'),
+        vAllowRepaint: document.getElementById('v-allow-repaint')?.checked || false
     };
     localStorage.setItem('cats_ui_config', JSON.stringify(uiConfig));
 }
@@ -356,6 +420,12 @@ function loadUIConfig() {
             const config = JSON.parse(saved);
             if (typeof config.showMA === 'boolean' && document.getElementById('toggle-ma')) document.getElementById('toggle-ma').checked = config.showMA;
             if (typeof config.showBB === 'boolean' && document.getElementById('toggle-bb')) document.getElementById('toggle-bb').checked = config.showBB;
+            if (typeof config.showVol === 'boolean' && document.getElementById('toggle-vol')) {
+                document.getElementById('toggle-vol').checked = config.showVol;
+            }
+            if (config.volHeight && document.getElementById('vol-chart-container')) {
+                document.getElementById('vol-chart-container').style.height = `${config.volHeight}px`;
+            }
             if (config.maPeriod && document.getElementById('ma-length')) {
                 document.getElementById('ma-length').value = config.maPeriod;
                 state.maPeriod = config.maPeriod;
@@ -427,6 +497,10 @@ function loadUIConfig() {
                 document.getElementById('macd-sig').value = config.macdSig;
                 state.MACD_SIG = config.macdSig;
             }
+            if (typeof config.macdAllowRepaint === 'boolean' && document.getElementById('macd-allow-repaint')) {
+                document.getElementById('macd-allow-repaint').checked = config.macdAllowRepaint;
+                state.MACD_ALLOW_REPAINT = config.macdAllowRepaint;
+            }
             if (typeof config.showStochRSI === 'boolean' && document.getElementById('toggle-stoch-rsi')) {
                 document.getElementById('toggle-stoch-rsi').checked = config.showStochRSI;
             }
@@ -453,6 +527,42 @@ function loadUIConfig() {
                 document.getElementById('stoch-d').value = config.stochD;
                 state.STOCH_D = config.stochD;
             }
+            if (typeof config.stochAllowRepaint === 'boolean' && document.getElementById('stoch-allow-repaint')) {
+                document.getElementById('stoch-allow-repaint').checked = config.stochAllowRepaint;
+                state.STOCH_ALLOW_REPAINT = config.stochAllowRepaint;
+            }
+
+            if (typeof config.showVWAP === 'boolean' && document.getElementById('toggle-vwap')) {
+                document.getElementById('toggle-vwap').checked = config.showVWAP;
+            }
+            if (config.vTF && document.getElementById('v-tf')) {
+                document.getElementById('v-tf').value = config.vTF;
+                state.V_TF = config.vTF;
+            }
+            if (config.vVwapWindow && document.getElementById('v-vwap-window')) {
+                document.getElementById('v-vwap-window').value = config.vVwapWindow;
+                state.V_VWAP_WINDOW = config.vVwapWindow;
+            }
+            if (config.vVwapSigma && document.getElementById('v-vwap-sigma')) {
+                document.getElementById('v-vwap-sigma').value = config.vVwapSigma;
+                state.V_VWAP_SIGMA = config.vVwapSigma;
+            }
+            if (config.vVolLookback && document.getElementById('v-vol-lookback')) {
+                document.getElementById('v-vol-lookback').value = config.vVolLookback;
+                state.V_VOL_LOOKBACK = config.vVolLookback;
+            }
+            if (config.vVolMult && document.getElementById('v-vol-mult')) {
+                document.getElementById('v-vol-mult').value = config.vVolMult;
+                state.V_VOL_MULT = config.vVolMult;
+            }
+            if (config.vWickRatio && document.getElementById('v-wick-ratio')) {
+                document.getElementById('v-wick-ratio').value = config.vWickRatio;
+                state.V_WICK_RATIO = config.vWickRatio;
+            }
+            if (typeof config.vAllowRepaint === 'boolean' && document.getElementById('v-allow-repaint')) {
+                document.getElementById('v-allow-repaint').checked = config.vAllowRepaint;
+                state.V_ALLOW_REPAINT = config.vAllowRepaint;
+            }
         }
     } catch (e) { }
 }
@@ -465,7 +575,8 @@ async function init() {
         chartContainer, 
         document.getElementById('wt-chart-container'), 
         document.getElementById('macd-chart-container'), 
-        document.getElementById('stoch-chart-container')
+        document.getElementById('stoch-chart-container'),
+        document.getElementById('vol-chart-container')
     );
 
     await loadSymbols();
@@ -817,6 +928,86 @@ async function init() {
         if (state.authToken) await updateConfig();
     });
 
+    // V-Climax (VWAP) bindings
+    const toggleVWAP = document.getElementById('toggle-vwap');
+    const vwapParamsContainer = document.getElementById('vwap-params-container');
+
+    const updateVWAPVisibility = () => {
+        if (!toggleVWAP) return;
+        const isVisible = toggleVWAP.checked;
+        if (state.vwapSeries) state.vwapSeries.applyOptions({ visible: isVisible });
+        if (state.vwapUpperSeries) state.vwapUpperSeries.applyOptions({ visible: isVisible });
+        if (state.vwapLowerSeries) state.vwapLowerSeries.applyOptions({ visible: isVisible });
+
+        if (isVisible) {
+            vwapParamsContainer?.classList.remove('hidden');
+        } else {
+            vwapParamsContainer?.classList.add('hidden');
+        }
+        saveUIConfig();
+        applyIndicatorMarkers();
+    };
+
+    toggleVWAP?.addEventListener('change', updateVWAPVisibility);
+
+    const bindVParamInput = (id, isFloat = false, minVal = 0.1) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        input.addEventListener('change', async (e) => {
+            let val = isFloat ? parseFloat(e.target.value) : parseInt(e.target.value, 10);
+            if (isNaN(val) || val < minVal) val = minVal;
+            e.target.value = val;
+
+            if (id === 'v-vwap-window') state.V_VWAP_WINDOW = val;
+            else if (id === 'v-vwap-sigma') state.V_VWAP_SIGMA = val;
+            else if (id === 'v-vol-lookback') state.V_VOL_LOOKBACK = val;
+            else if (id === 'v-vol-mult') state.V_VOL_MULT = val;
+            else if (id === 'v-wick-ratio') state.V_WICK_RATIO = val;
+
+            if (state.klineData) updateChartSeries();
+            saveUIConfig();
+            if (state.authToken) await updateConfig();
+        });
+    };
+
+    bindVParamInput('v-vwap-window', false, 10);
+    bindVParamInput('v-vwap-sigma', true, 0.5);
+    bindVParamInput('v-vol-lookback', false, 5);
+    bindVParamInput('v-vol-mult', true, 1.0);
+    bindVParamInput('v-wick-ratio', true, 0.1);
+
+    document.getElementById('v-allow-repaint')?.addEventListener('change', async (e) => {
+        state.V_ALLOW_REPAINT = e.target.checked;
+        if (state.klineData) updateChartSeries();
+        saveUIConfig();
+        if (state.authToken) await updateConfig();
+    });
+
+    document.getElementById('v-tf')?.addEventListener('change', async (e) => {
+        state.V_TF = e.target.value;
+        if (state.klineData) updateChartSeries();
+        saveUIConfig();
+        if (state.authToken) await updateConfig();
+    });
+
+    // Volume Sub-Chart bindings
+    const toggleVol = document.getElementById('toggle-vol');
+    const volContainer = document.getElementById('vol-chart-container');
+    const resizerVol = document.getElementById('chart-resizer-vol');
+
+    const updateVolVisibility = () => {
+        const isVisible = toggleVol ? toggleVol.checked : false;
+        if (isVisible) {
+            volContainer?.classList.remove('hidden');
+            resizerVol?.classList.remove('hidden');
+        } else {
+            volContainer?.classList.add('hidden');
+            resizerVol?.classList.add('hidden');
+        }
+        saveUIConfig();
+    };
+    toggleVol?.addEventListener('change', updateVolVisibility);
+
     // Resizer Dragging Logic
     let activeResizer = null;
     let isResizing = false;
@@ -888,6 +1079,20 @@ async function init() {
         resizerStoch.addEventListener('touchstart', (e) => {
             if (e.touches.length > 0) {
                 startResize(e.touches[0].clientY, resizerStoch, stochContainer);
+                e.preventDefault();
+            }
+        }, { passive: false });
+    }
+
+    if (resizerVol) {
+        resizerVol.addEventListener('mousedown', (e) => {
+            startResize(e.clientY, resizerVol, volContainer);
+            e.preventDefault();
+        });
+
+        resizerVol.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 0) {
+                startResize(e.touches[0].clientY, resizerVol, volContainer);
                 e.preventDefault();
             }
         }, { passive: false });
@@ -997,10 +1202,20 @@ async function init() {
     const stochContainerEl = document.getElementById('stoch-chart-container');
     if (stochContainerEl) stochResizeObserver.observe(stochContainerEl);
 
+    const volResizeObserver = new ResizeObserver(entries => {
+        if (!state.volChart) return;
+        const { width, height } = entries[0].contentRect;
+        state.volChart.applyOptions({ width, height });
+    });
+    const volContainerEl = document.getElementById('vol-chart-container');
+    if (volContainerEl) volResizeObserver.observe(volContainerEl);
+
     updateWTVisibility();
     updateMACDVisibility();
     updateStochVisibility();
     updateSupertrendVisibility();
+    updateVWAPVisibility();
+    updateVolVisibility();
 }
 
 document.addEventListener('DOMContentLoaded', init);

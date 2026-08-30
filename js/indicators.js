@@ -46,18 +46,30 @@ export function aggregateKlines(history, timeframe) {
         const close = group[group.length - 1].close;
         let high = -Infinity;
         let low = Infinity;
+        let volume = 0;
         for (const tick of group) {
             if (tick.high > high) high = tick.high;
             if (tick.low < low) low = tick.low;
+            volume += (tick.volume || 0);
         }
         aggregated.push({
             time: key,
             open,
             high,
             low,
-            close
+            close,
+            volume
         });
     }
+
+    // Merge with pre-cached MTF history from backend if available
+    if (timeframe !== '1m' && state.mtfKlines && state.mtfKlines[timeframe] && state.mtfKlines[timeframe].length > 0) {
+        const mtfHistory = state.mtfKlines[timeframe];
+        const firstAggTime = aggregated.length > 0 ? aggregated[0].time : Infinity;
+        const merged = mtfHistory.filter(k => k.time < firstAggTime);
+        return merged.concat(aggregated);
+    }
+
     return aggregated;
 }
 
@@ -416,4 +428,238 @@ export function calculateSupertrend(formattedData, period = 10, multiplier = 3.0
     }
 
     return results;
+}
+
+export function calculateVWAPClimax(klines, window = 96, sigma = 2.0, volLookback = 30, volMult = 1.8, wickRatio = 0.8) {
+    const len = klines.length;
+    const vwapData = [];
+    const upperBandData = [];
+    const lowerBandData = [];
+    const signals = new Array(len).fill(0);
+
+    const volHistData = [];
+    const volMaData = [];
+    const volSurgeThreshData = [];
+    const subMarkers = [];
+
+    if (len === 0) {
+        return { vwapData, upperBandData, lowerBandData, signals, volHistData, volMaData, volSurgeThreshData, subMarkers };
+    }
+
+    const typicalPrices = klines.map(k => (k.high + k.low + k.close) / 3.0);
+    const volumes = klines.map(k => (k.volume !== undefined && k.volume > 0) ? k.volume : 1.0);
+    const pv = typicalPrices.map((tp, idx) => tp * volumes[idx]);
+
+    for (let i = 0; i < len; i++) {
+        const t = klines[i].time;
+        const currentWindow = Math.min(i + 1, window);
+
+        let sumPV = 0;
+        let sumVol = 0;
+        let tpSum = 0;
+        for (let j = i - currentWindow + 1; j <= i; j++) {
+            sumPV += pv[j];
+            sumVol += volumes[j];
+            tpSum += typicalPrices[j];
+        }
+
+        const tpMean = tpSum / currentWindow;
+        const vwapVal = sumVol > 0 ? (sumPV / sumVol) : tpMean;
+
+        let tpSqDiff = 0;
+        for (let j = i - currentWindow + 1; j <= i; j++) {
+            tpSqDiff += Math.pow(typicalPrices[j] - tpMean, 2);
+        }
+        const stdVal = currentWindow > 1 ? Math.sqrt(tpSqDiff / currentWindow) : (typicalPrices[i] * 0.005);
+
+        const upperVal = vwapVal + sigma * stdVal;
+        const lowerVal = vwapVal - sigma * stdVal;
+
+        vwapData.push({ time: t, value: vwapVal });
+        upperBandData.push({ time: t, value: upperVal });
+        lowerBandData.push({ time: t, value: lowerVal });
+
+        const currentVolLookback = Math.min(i + 1, volLookback);
+        let volMA = volumes[i];
+        if (currentVolLookback >= 3) {
+            let sumVolMA = 0;
+            for (let j = i - currentVolLookback + 1; j <= i; j++) {
+                sumVolMA += volumes[j];
+            }
+            volMA = sumVolMA / currentVolLookback;
+        }
+
+        const volRatio = volumes[i] / (volMA + 1e-8);
+        const isVolSurge = (currentVolLookback >= 3) && (volRatio >= volMult);
+
+        const open = klines[i].open;
+        const close = klines[i].close;
+        const high = klines[i].high;
+        const low = klines[i].low;
+
+        const isGreen = close >= open;
+        let barColor = isGreen ? 'rgba(46, 189, 133, 0.65)' : 'rgba(246, 70, 93, 0.65)';
+        if (isVolSurge) {
+            barColor = '#f59e0b'; // Gold highlight on volume surge
+        }
+
+        volHistData.push({ time: t, value: volumes[i], color: barColor });
+        volMaData.push({ time: t, value: volMA });
+        volSurgeThreshData.push({ time: t, value: volMA * volMult });
+
+        const body = Math.max(Math.abs(close - open), (high - low) * 0.05); // prevent 0 division
+        const lowerWick = Math.min(open, close) - low;
+        const upperWick = high - Math.max(open, close);
+        const lowerWickRatio = lowerWick / body;
+        const upperWickRatio = upperWick / body;
+        const isLowerWick = lowerWickRatio >= wickRatio;
+        const isUpperWick = upperWickRatio >= wickRatio;
+
+        let sig = 0;
+        if (close < lowerVal && isVolSurge && isLowerWick) {
+            sig = 1;
+        } else if (close > upperVal && isVolSurge && isUpperWick) {
+            sig = -1;
+        }
+        signals[i] = sig;
+
+        subMarkers.push({
+            time: t,
+            close,
+            high,
+            low,
+            isVolSurge,
+            isLowerWick,
+            isUpperWick,
+            volRatio,
+            lowerWickRatio,
+            upperWickRatio,
+            signal: sig
+        });
+    }
+
+    return { 
+        vwapData, 
+        upperBandData, 
+        lowerBandData, 
+        signals, 
+        volHistData, 
+        volMaData, 
+        volSurgeThreshData, 
+        subMarkers 
+    };
+}
+
+export function calculateMTFVWAPClimax(
+    formattedData,
+    tf = state.V_TF || '15m',
+    window = state.V_VWAP_WINDOW || 96,
+    sigma = state.V_VWAP_SIGMA || 2.0,
+    volLookback = state.V_VOL_LOOKBACK || 30,
+    volMult = state.V_VOL_MULT || 1.8,
+    wickRatio = state.V_WICK_RATIO || 0.8,
+    allowRepaint = state.V_ALLOW_REPAINT || false
+) {
+    if (!formattedData || formattedData.length === 0) {
+        return { 
+            vwapData: [], 
+            upperBandData: [], 
+            lowerBandData: [], 
+            signals: [], 
+            volHistData: [], 
+            volMaData: [], 
+            volSurgeThreshData: [],
+            subMarkers: [] 
+        };
+    }
+
+    const aggregated = aggregateKlines(formattedData, tf);
+    const vResult = calculateVWAPClimax(aggregated, window, sigma, volLookback, volMult, wickRatio);
+
+    const vwapData = [];
+    const upperBandData = [];
+    const lowerBandData = [];
+    const signals = [];
+    const volHistData = [];
+    const volMaData = [];
+    const volSurgeThreshData = [];
+
+    let aggIdx = 0;
+    for (let i = 0; i < formattedData.length; i++) {
+        const t = formattedData[i].time;
+        while (aggIdx + 1 < aggregated.length && aggregated[aggIdx + 1].time <= t) {
+            aggIdx++;
+        }
+
+        const is1m = tf === '1m';
+        const useIdx = (is1m || allowRepaint) ? aggIdx : aggIdx - 1;
+        const currentAgg = useIdx >= 0 ? aggregated[useIdx] : null;
+
+        if (currentAgg && useIdx < vResult.vwapData.length && vResult.vwapData[useIdx] && vResult.vwapData[useIdx].value !== undefined) {
+            const vObj = vResult.vwapData[useIdx];
+            const uObj = vResult.upperBandData[useIdx];
+            const lObj = vResult.lowerBandData[useIdx];
+            const sig = vResult.signals[useIdx] || 0;
+
+            const vHist = vResult.volHistData[useIdx];
+            const vMa = vResult.volMaData[useIdx];
+            const vSurge = vResult.volSurgeThreshData[useIdx];
+
+            vwapData.push({ time: t, value: vObj.value });
+            upperBandData.push({ time: t, value: uObj.value });
+            lowerBandData.push({ time: t, value: lObj.value });
+            signals.push({ time: t, value: sig });
+
+            volHistData.push({ time: t, value: vHist ? vHist.value : 0, color: vHist ? vHist.color : undefined });
+            volMaData.push({ time: t, value: vMa ? vMa.value : 0 });
+            volSurgeThreshData.push({ time: t, value: vSurge ? vSurge.value : 0 });
+        } else {
+            const tp = (formattedData[i].high + formattedData[i].low + formattedData[i].close) / 3.0;
+            vwapData.push({ time: t, value: tp });
+            upperBandData.push({ time: t, value: tp });
+            lowerBandData.push({ time: t, value: tp });
+            signals.push({ time: t, value: 0 });
+
+            volHistData.push({ time: t, value: formattedData[i].volume || 0 });
+            volMaData.push({ time: t, value: formattedData[i].volume || 0 });
+            volSurgeThreshData.push({ time: t, value: (formattedData[i].volume || 0) * volMult });
+        }
+    }
+
+    // subMarkers only for completed 15m candles (or realtime bar only if allowRepaint is true)
+    const subMarkers = [];
+    if (vResult.subMarkers && vResult.subMarkers.length > 0) {
+        const tfMap = { '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1d': 86400 };
+        const interval = tfMap[tf] || 900;
+        const formattedTimeSet = new Set(formattedData.map(d => d.time));
+
+        // When allowRepaint is false, exclude the very last incomplete candle (aggregated.length - 1)
+        const maxIdx = (tf === '1m' || allowRepaint) ? vResult.subMarkers.length : vResult.subMarkers.length - 1;
+
+        for (let idx = 0; idx < maxIdx; idx++) {
+            const m = vResult.subMarkers[idx];
+            const matchTime = m.time + interval;
+
+            // Only add marker if the completed candle timestamp actually exists in the formatted 1m timeline
+            if (formattedTimeSet.has(matchTime)) {
+                subMarkers.push({
+                    ...m,
+                    time: matchTime
+                });
+            }
+        }
+    }
+
+    return { 
+        vwapData, 
+        upperBandData, 
+        lowerBandData, 
+        signals, 
+        rawAggregated: aggregated, 
+        rawSignals: vResult.signals,
+        volHistData,
+        volMaData,
+        volSurgeThreshData,
+        subMarkers
+    };
 }

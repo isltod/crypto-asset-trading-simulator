@@ -9,6 +9,7 @@ export const state = {
     currentSymbol: 'BTCUSDT',
     lastClose: 0,
     klineData: [],
+    mtfKlines: {},
     lastHB: Date.now(),
     ws: null,
 
@@ -62,6 +63,16 @@ export const state = {
     lastStochData: null,
     stochPriceLines: [],
 
+    // V-Climax (VWAP Climax)
+    V_TF: '15m',
+    V_VWAP_WINDOW: 96,
+    V_VWAP_SIGMA: 2.0,
+    V_VOL_LOOKBACK: 30,
+    V_VOL_MULT: 1.8,
+    V_WICK_RATIO: 0.8,
+    V_ALLOW_REPAINT: false,
+    lastVwapData: null,
+
     // Chart Instances & Series References
     chart: null,
     candleSeries: null,
@@ -69,6 +80,11 @@ export const state = {
     bbUpperSeries: null,
     bbLowerSeries: null,
     bbMiddleSeries: null,
+    vwapSeries: null,
+    vwapUpperSeries: null,
+    vwapLowerSeries: null,
+    markerUpperSeries: null,
+    markerLowerSeries: null,
 
     wtChart: null,
     wt1Series: null,
@@ -82,6 +98,11 @@ export const state = {
     stochRsiChart: null,
     stochRsiKSeries: null,
     stochRsiDSeries: null,
+
+    volChart: null,
+    volHistSeries: null,
+    volMaSeries: null,
+    volSurgeThreshSeries: null,
 
     activeChart: null
 };

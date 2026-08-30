@@ -3,7 +3,8 @@ import {
     calculateMTFWaveTrend, 
     calculateMTFMacd, 
     calculateMTFStochRSI, 
-    calculateSupertrend 
+    calculateSupertrend,
+    calculateMTFVWAPClimax
 } from './indicators.js';
 
 export function updateWTPriceLines() {
@@ -257,8 +258,67 @@ export function applyIndicatorMarkers() {
         if (state.stochRsiKSeries) state.stochRsiKSeries.setMarkers([]);
     }
 
+    // 4. V-Climax (VWAP Climax) Markers & Sub-condition Markers
+    const upperVwapMarkers = [];
+    const lowerVwapMarkers = [];
+    const toggleVWAP = document.getElementById('toggle-vwap');
+    if (toggleVWAP && toggleVWAP.checked && state.lastVwapData) {
+        const subMarkers = state.lastVwapData.subMarkers || [];
+        for (let i = 0; i < subMarkers.length; i++) {
+            const m = subMarkers[i];
+            const time = m.time;
+
+            if (m.signal === 1) {
+                // 3 conditions ALL met -> Full Long Signal (Lower offset)
+                lowerVwapMarkers.push({
+                    time: time,
+                    position: 'belowBar',
+                    color: '#10b981',
+                    shape: 'arrowUp',
+                    text: 'LONG',
+                    size: 1.5
+                });
+            } else if (m.signal === -1) {
+                // 3 conditions ALL met -> Full Short Signal (Upper offset)
+                upperVwapMarkers.push({
+                    time: time,
+                    position: 'aboveBar',
+                    color: '#f43f5e',
+                    shape: 'arrowDown',
+                    text: 'SHORT',
+                    size: 1.5
+                });
+            } else {
+                // Individual condition sub-markers (Spaced via dedicated offset lines)
+                if (m.isLowerWick) {
+                    lowerVwapMarkers.push({
+                        time: time,
+                        position: 'belowBar',
+                        color: '#38bdf8',
+                        shape: 'circle',
+                        size: 0.8
+                    });
+                } else if (m.isUpperWick) {
+                    upperVwapMarkers.push({
+                        time: time,
+                        position: 'aboveBar',
+                        color: '#ec4899',
+                        shape: 'circle',
+                        size: 0.8
+                    });
+                }
+            }
+        }
+    }
+
     markers.sort((a, b) => a.time - b.time);
     state.candleSeries.setMarkers(markers);
+
+    upperVwapMarkers.sort((a, b) => a.time - b.time);
+    if (state.markerUpperSeries) state.markerUpperSeries.setMarkers(upperVwapMarkers);
+
+    lowerVwapMarkers.sort((a, b) => a.time - b.time);
+    if (state.markerLowerSeries) state.markerLowerSeries.setMarkers(lowerVwapMarkers);
 }
 
 export function renderSupertrend() {
@@ -371,6 +431,21 @@ export function updateChartSeries() {
     state.stochRsiKSeries.setData(stochData.kData);
     state.stochRsiDSeries.setData(stochData.dData);
 
+    const vwapData = calculateMTFVWAPClimax(formattedData, state.V_TF, state.V_VWAP_WINDOW, state.V_VWAP_SIGMA, state.V_VOL_LOOKBACK, state.V_VOL_MULT, state.V_WICK_RATIO, state.V_ALLOW_REPAINT);
+    state.lastVwapData = vwapData;
+    if (state.vwapSeries) state.vwapSeries.setData(vwapData.vwapData);
+    if (state.vwapUpperSeries) state.vwapUpperSeries.setData(vwapData.upperBandData);
+    if (state.vwapLowerSeries) state.vwapLowerSeries.setData(vwapData.lowerBandData);
+
+    if (state.volHistSeries && vwapData.volHistData) state.volHistSeries.setData(vwapData.volHistData);
+    if (state.volMaSeries && vwapData.volMaData) state.volMaSeries.setData(vwapData.volMaData);
+    if (state.volSurgeThreshSeries && vwapData.volSurgeThreshData) state.volSurgeThreshSeries.setData(vwapData.volSurgeThreshData);
+
+    if (state.markerUpperSeries && state.markerLowerSeries) {
+        state.markerUpperSeries.setData(formattedData.map(d => ({ time: d.time, value: d.high * 1.0008 })));
+        state.markerLowerSeries.setData(formattedData.map(d => ({ time: d.time, value: d.low * 0.9992 })));
+    }
+
     applyIndicatorMarkers();
     renderSupertrend();
 }
@@ -420,11 +495,30 @@ export function updateIndicatorsLive() {
         state.stochRsiDSeries.update(stochData.dData[stochData.dData.length - 1]);
     }
 
+    const vwapData = calculateMTFVWAPClimax(data, state.V_TF, state.V_VWAP_WINDOW, state.V_VWAP_SIGMA, state.V_VOL_LOOKBACK, state.V_VOL_MULT, state.V_WICK_RATIO, state.V_ALLOW_REPAINT);
+    state.lastVwapData = vwapData;
+    if (vwapData.vwapData.length > 0 && state.vwapSeries) {
+        state.vwapSeries.update(vwapData.vwapData[vwapData.vwapData.length - 1]);
+        state.vwapUpperSeries.update(vwapData.upperBandData[vwapData.upperBandData.length - 1]);
+        state.vwapLowerSeries.update(vwapData.lowerBandData[vwapData.lowerBandData.length - 1]);
+    }
+    if (vwapData.volHistData && vwapData.volHistData.length > 0 && state.volHistSeries) {
+        state.volHistSeries.update(vwapData.volHistData[vwapData.volHistData.length - 1]);
+        state.volMaSeries.update(vwapData.volMaData[vwapData.volMaData.length - 1]);
+        state.volSurgeThreshSeries.update(vwapData.volSurgeThreshData[vwapData.volSurgeThreshData.length - 1]);
+    }
+
+    if (state.markerUpperSeries && state.markerLowerSeries && data.length > 0) {
+        const lastBar = data[data.length - 1];
+        state.markerUpperSeries.update({ time: lastBar.time, value: lastBar.high * 1.0008 });
+        state.markerLowerSeries.update({ time: lastBar.time, value: lastBar.low * 0.9992 });
+    }
+
     applyIndicatorMarkers();
     renderSupertrend();
 }
 
-export function initCharts(chartContainer, wtChartContainer, macdChartContainer, stochChartContainer) {
+export function initCharts(chartContainer, wtChartContainer, macdChartContainer, stochChartContainer, volChartContainer) {
     state.chart = LightweightCharts.createChart(chartContainer, {
         width: chartContainer.clientWidth || 600,
         height: chartContainer.clientHeight || 400,
@@ -485,6 +579,28 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
     state.bbMiddleSeries = state.chart.addLineSeries({ color: 'rgba(56, 189, 248, 0.5)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-bb')?.checked });
     state.bbLowerSeries = state.chart.addLineSeries({ color: 'rgba(56, 189, 248, 0.5)', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-bb')?.checked });
 
+    state.vwapSeries = state.chart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: 'VWAP', crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-vwap')?.checked });
+    state.vwapUpperSeries = state.chart.addLineSeries({ color: '#f43f5e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: '+2.0σ', crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-vwap')?.checked });
+    state.vwapLowerSeries = state.chart.addLineSeries({ color: '#10b981', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: '-2.0σ', crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-vwap')?.checked });
+
+    // Invisible floating offset series for spacing out V-Climax markers comfortably from candles
+    state.markerUpperSeries = state.chart.addLineSeries({
+        color: 'transparent',
+        lineWidth: 1,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        autoscaleInfoProvider: () => null
+    });
+    state.markerLowerSeries = state.chart.addLineSeries({
+        color: 'transparent',
+        lineWidth: 1,
+        crosshairMarkerVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        autoscaleInfoProvider: () => null
+    });
+
     // Initialize WaveTrend Chart
     state.wtChart = LightweightCharts.createChart(wtChartContainer, {
         width: wtChartContainer.clientWidth || 600,
@@ -499,9 +615,7 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
             borderColor: 'rgba(255, 255, 255, 0.1)',
             minimumWidth: 80,
         },
-        timeScale: {
-            visible: false,
-        },
+        timeScale: { visible: false },
     });
 
     state.wtChart.priceScale('right').applyOptions({
@@ -527,9 +641,7 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
             borderColor: 'rgba(255, 255, 255, 0.1)',
             minimumWidth: 80,
         },
-        timeScale: {
-            visible: false,
-        },
+        timeScale: { visible: false },
     });
 
     state.macdChart.priceScale('right').applyOptions({
@@ -559,9 +671,7 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
             borderColor: 'rgba(255, 255, 255, 0.1)',
             minimumWidth: 80,
         },
-        timeScale: {
-            visible: false,
-        },
+        timeScale: { visible: false },
     });
 
     state.stochRsiChart.priceScale('right').applyOptions({
@@ -573,26 +683,49 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
     state.stochRsiDSeries = state.stochRsiChart.addLineSeries({ color: '#fb923c', lineWidth: 1.5, title: '%D', lineStyle: LightweightCharts.LineStyle.Dashed, crosshairMarkerVisible: true });
     updateStochPriceLines();
 
+    // Initialize Volume Sub Chart
+    if (volChartContainer) {
+        state.volChart = LightweightCharts.createChart(volChartContainer, {
+            width: volChartContainer.clientWidth || 600,
+            height: volChartContainer.clientHeight || 130,
+            layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#94a3b8' },
+            grid: {
+                vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            rightPriceScale: {
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                minimumWidth: 80,
+            },
+            timeScale: { visible: false },
+        });
+
+        state.volChart.priceScale('right').applyOptions({
+            autoScale: true,
+            scaleMargins: { top: 0.15, bottom: 0 },
+        });
+
+        state.volHistSeries = state.volChart.addHistogramSeries({
+            priceFormat: { type: 'volume' },
+            priceScaleId: 'right'
+        });
+        state.volMaSeries = state.volChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: 'Vol MA30', crosshairMarkerVisible: true });
+        state.volSurgeThreshSeries = state.volChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: 'Surge (1.8x)', crosshairMarkerVisible: true });
+    }
+
     // Sync time scales
-    state.chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
-        state.wtChart.timeScale().setVisibleLogicalRange(logicalRange);
-        state.macdChart.timeScale().setVisibleLogicalRange(logicalRange);
-        state.stochRsiChart.timeScale().setVisibleLogicalRange(logicalRange);
-    });
-    state.wtChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
-        state.chart.timeScale().setVisibleLogicalRange(logicalRange);
-        state.macdChart.timeScale().setVisibleLogicalRange(logicalRange);
-        state.stochRsiChart.timeScale().setVisibleLogicalRange(logicalRange);
-    });
-    state.macdChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
-        state.chart.timeScale().setVisibleLogicalRange(logicalRange);
-        state.wtChart.timeScale().setVisibleLogicalRange(logicalRange);
-        state.stochRsiChart.timeScale().setVisibleLogicalRange(logicalRange);
-    });
-    state.stochRsiChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
-        state.chart.timeScale().setVisibleLogicalRange(logicalRange);
-        state.wtChart.timeScale().setVisibleLogicalRange(logicalRange);
-        state.macdChart.timeScale().setVisibleLogicalRange(logicalRange);
+    const allCharts = [state.chart, state.wtChart, state.macdChart, state.stochRsiChart];
+    if (state.volChart) allCharts.push(state.volChart);
+
+    allCharts.forEach(source => {
+        source.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
+            allCharts.forEach(target => {
+                if (target !== source) {
+                    target.timeScale().setVisibleLogicalRange(logicalRange);
+                }
+            });
+        });
     });
 
     // Crosshair Sync
@@ -600,11 +733,13 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
     wtChartContainer.addEventListener('mouseenter', () => state.activeChart = state.wtChart);
     macdChartContainer.addEventListener('mouseenter', () => state.activeChart = state.macdChart);
     stochChartContainer.addEventListener('mouseenter', () => state.activeChart = state.stochRsiChart);
+    if (volChartContainer) volChartContainer.addEventListener('mouseenter', () => state.activeChart = state.volChart);
 
     chartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.chart) state.activeChart = null; });
     wtChartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.wtChart) state.activeChart = null; });
     macdChartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.macdChart) state.activeChart = null; });
     stochChartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.stochRsiChart) state.activeChart = null; });
+    if (volChartContainer) volChartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.volChart) state.activeChart = null; });
 
     function syncCrosshair(sourceChart, param) {
         if (state.activeChart && sourceChart !== state.activeChart) return;
@@ -615,6 +750,7 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
             if (sourceChart !== state.wtChart) state.wtChart.clearCrosshairPosition();
             if (sourceChart !== state.macdChart) state.macdChart.clearCrosshairPosition();
             if (sourceChart !== state.stochRsiChart) state.stochRsiChart.clearCrosshairPosition();
+            if (state.volChart && sourceChart !== state.volChart) state.volChart.clearCrosshairPosition();
             return;
         }
 
@@ -650,10 +786,19 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
             }
             state.stochRsiChart.setCrosshairPosition(price, time, state.stochRsiKSeries);
         }
+        if (state.volChart && sourceChart !== state.volChart) {
+            let price = 0;
+            if (state.lastVwapData && state.lastVwapData.volMaData) {
+                const match = state.lastVwapData.volMaData.find(d => d.time === time);
+                if (match && match.value !== undefined) price = match.value;
+            }
+            state.volChart.setCrosshairPosition(price, time, state.volMaSeries);
+        }
     }
 
     state.chart.subscribeCrosshairMove(param => syncCrosshair(state.chart, param));
     state.wtChart.subscribeCrosshairMove(param => syncCrosshair(state.wtChart, param));
     state.macdChart.subscribeCrosshairMove(param => syncCrosshair(state.macdChart, param));
     state.stochRsiChart.subscribeCrosshairMove(param => syncCrosshair(state.stochRsiChart, param));
+    if (state.volChart) state.volChart.subscribeCrosshairMove(param => syncCrosshair(state.volChart, param));
 }

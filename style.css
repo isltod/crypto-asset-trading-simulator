@@ -406,6 +406,16 @@ body {
     display: none;
 }
 
+.vol-chart-container {
+    height: 130px;
+    width: 100%;
+    position: relative;
+}
+
+.vol-chart-container.hidden {
+    display: none;
+}
+
 /* Loading overlay */
 .loading-overlay {
     position: absolute;
