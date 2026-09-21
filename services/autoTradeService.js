@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { db } = require('../config/db');
 const { klineHistories, klineHistoriesMTF } = require('./marketService');
-const { aggregateKlines, calculateWaveTrend, calculateMACDForKlines, calculateStochRSI, calculateVWAPClimax } = require('./indicatorService');
+const { aggregateKlines, calculateWaveTrend, calculateMACDForKlines, calculateStochRSI, calculateVWAPClimax, calculateExtremeBreakout } = require('./indicatorService');
 const { openPositionInternal, closePosition } = require('./tradeService');
 
 let ort = null;
@@ -133,7 +133,7 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
     const history = klineHistories[symbol];
     if (!history || history.length < 50) return;
 
-    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd', 'stoch_rsi', 'v_climax')`, (err, accounts) => {
+    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd', 'stoch_rsi', 'v_climax', 'extreme_breakout')`, (err, accounts) => {
         if (err || !accounts || accounts.length === 0) return;
 
         accounts.forEach(async (account) => {
@@ -142,7 +142,11 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
             const userId = account.user_id;
             let signal = null;
 
-            if (account.signal_type === 'wave_trend') {
+            if (account.signal_type === 'extreme_breakout') {
+                if (!isClosed) return; // 1m bar close only
+                if (symbol.toUpperCase() !== 'BTCUSDT') return; // BTCUSDT only
+                signal = calculateExtremeBreakout(history);
+            } else if (account.signal_type === 'wave_trend') {
                 const tf = account.wt_tf || '5m';
                 const n1 = account.wt_n1;
                 const n2 = account.wt_n2;
@@ -362,6 +366,10 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                     if (err) return;
                     
                     if (pos) {
+                        if (account.signal_type === 'extreme_breakout') {
+                            // Extreme Breakout serial rule: skip all signals while in position
+                            return;
+                        }
                         if (pos.symbol !== symbol) {
                             console.log(`[AutoTrade] User ${account.username} already has an active position on ${pos.symbol}. Skipping signal on ${symbol}.`);
                             return;

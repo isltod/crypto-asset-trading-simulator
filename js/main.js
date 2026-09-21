@@ -346,6 +346,14 @@ async function updateConfig() {
         });
         state.autoTradeEnabled = toggleAutoTrade ? toggleAutoTrade.checked : false;
         state.signalType = signalSelect ? signalSelect.value : 'none';
+        if (state.signalType === 'extreme_breakout') {
+            const toggleEB = document.getElementById('toggle-extreme-breakout');
+            if (toggleEB && !toggleEB.checked) {
+                toggleEB.checked = true;
+                saveUIConfig();
+            }
+        }
+        applyIndicatorMarkers();
         updateBotStateBadge();
     } catch (e) { }
 }
@@ -383,6 +391,7 @@ function saveUIConfig() {
         wtOb: parseInt(document.getElementById('wt-ob')?.value || '53', 10),
         wtAllowRepaint: document.getElementById('wt-allow-repaint')?.checked || false,
         wtIgnoreObos: document.getElementById('wt-ignore-obos')?.checked || false,
+        showExtremeBreakout: document.getElementById('toggle-extreme-breakout')?.checked ?? true,
         showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
         supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
         supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0'),
@@ -463,6 +472,9 @@ function loadUIConfig() {
             if (typeof config.wtIgnoreObos === 'boolean' && document.getElementById('wt-ignore-obos')) {
                 document.getElementById('wt-ignore-obos').checked = config.wtIgnoreObos;
                 state.WT_IGNORE_OBOS = config.wtIgnoreObos;
+            }
+            if (typeof config.showExtremeBreakout === 'boolean' && document.getElementById('toggle-extreme-breakout')) {
+                document.getElementById('toggle-extreme-breakout').checked = config.showExtremeBreakout;
             }
             if (typeof config.showSupertrend === 'boolean' && document.getElementById('toggle-supertrend')) {
                 document.getElementById('toggle-supertrend').checked = config.showSupertrend;
@@ -949,6 +961,13 @@ async function init() {
     };
 
     toggleVWAP?.addEventListener('change', updateVWAPVisibility);
+
+    // Extreme Breakout bindings
+    const toggleEB = document.getElementById('toggle-extreme-breakout');
+    toggleEB?.addEventListener('change', () => {
+        saveUIConfig();
+        applyIndicatorMarkers();
+    });
 
     const bindVParamInput = (id, isFloat = false, minVal = 0.1) => {
         const input = document.getElementById(id);

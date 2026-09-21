@@ -280,6 +280,77 @@ function calculateStochRSI(closes, rsiLen = 14, stochLen = 14, kPeriod = 3, dPer
     return { k: kArray, d: dArray };
 }
 
+function calculateExtremeBreakout(klines) {
+    const len = klines.length;
+    if (len < 60) return 'HOLD'; // Minimum required history
+
+    // Calculate 24h (1440m) average 1m volume
+    const lookback24h = Math.min(len, 1440);
+    let sumVol24h = 0;
+    for (let i = len - lookback24h; i < len; i++) {
+        sumVol24h += klines[i].volume || 0;
+    }
+    const avg24h1mVol = sumVol24h / lookback24h;
+
+    function getSignalAt(idx) {
+        if (idx < 15) return 0;
+        const curr = klines[idx].close;
+        const past = klines[idx - 15].close;
+        const ret15 = ((curr - past) / (past + 1e-9)) * 100;
+
+        let vol15 = 0;
+        for (let j = idx - 14; j <= idx; j++) {
+            vol15 += klines[j].volume || 0;
+        }
+        const volSurge = vol15 / (avg24h1mVol * 15 + 1e-9);
+
+        let totalPath = 0;
+        for (let j = idx - 14; j <= idx; j++) {
+            totalPath += Math.abs(klines[j].close - klines[j - 1].close);
+        }
+        const netChange = Math.abs(curr - past);
+        const er = netChange / (totalPath + 1e-9);
+
+        if (volSurge >= 2.5 && er >= 0.45) {
+            if (ret15 >= 0.7) return 1;   // LONG
+            if (ret15 <= -0.7) return -1; // SHORT
+        }
+        return 0;
+    }
+
+    const currentIdx = len - 1;
+    const currentSig = getSignalAt(currentIdx);
+    if (currentSig === 0) return 'HOLD';
+
+    // A1 Filter: Exclude if previous signal run length >= 5 bars
+    // 1. Find start of current signal run
+    let runStart = currentIdx;
+    while (runStart > 0 && getSignalAt(runStart - 1) !== 0) {
+        runStart--;
+    }
+
+    // 2. Scan backwards to find previous completed signal run
+    let p = runStart - 1;
+    while (p >= 15 && getSignalAt(p) === 0) {
+        p--;
+    }
+
+    if (p >= 15) {
+        const prevRunEnd = p;
+        while (p > 15 && getSignalAt(p - 1) !== 0) {
+            p--;
+        }
+        const prevRunStart = p;
+        const prevRunLen = prevRunEnd - prevRunStart + 1;
+        if (prevRunLen >= 5) {
+            console.log(`[ExtremeBreakout] A1 filter triggered: previous run length was ${prevRunLen} bars (>= 5). Skipping entry.`);
+            return 'HOLD';
+        }
+    }
+
+    return currentSig === 1 ? 'LONG' : 'SHORT';
+}
+
 module.exports = {
     calculateEMA,
     calculateWaveTrend,
@@ -287,5 +358,6 @@ module.exports = {
     calculateMACDForKlines,
     calculateRSI,
     calculateStochRSI,
-    calculateVWAPClimax
+    calculateVWAPClimax,
+    calculateExtremeBreakout
 };

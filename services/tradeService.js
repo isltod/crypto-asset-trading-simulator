@@ -148,10 +148,11 @@ function closePosition(userId, specificPrice, res = null, cb = null) {
 }
 
 function checkTPSL(symbol, currentPrice) {
-    db.all(`SELECT p.user_id, p.side, p.entry_price, p.leverage, a.tpsl_enabled, a.tp_roi, a.sl_roi 
+    db.all(`SELECT p.id, p.user_id, p.side, p.entry_price, p.leverage, p.entry_time, p.entry_type, 
+                   p.max_price_move_pct, p.be_activated, a.tpsl_enabled, a.tp_roi, a.sl_roi, a.signal_type 
             FROM positions p 
             JOIN accounts a ON p.user_id = a.user_id 
-            WHERE p.symbol = ? AND a.tpsl_enabled = 1`, [symbol], (err, positions) => {
+            WHERE p.symbol = ?`, [symbol], (err, positions) => {
         if (err || !positions) return;
 
         positions.forEach(pos => {
@@ -163,15 +164,74 @@ function checkTPSL(symbol, currentPrice) {
             }
             const roe = priceMovePct * pos.leverage;
 
-            if (pos.tpsl_enabled) {
-                if (roe >= pos.tp_roi || roe <= pos.sl_roi) {
-                    console.log(`[TPSL] Triggered for user ${pos.user_id} - ROE: ${roe.toFixed(2)}%`);
-                    closePosition(pos.user_id, currentPrice);
-                }
+            // 0. Update real-time max MFE (Maximum Favorable Excursion)
+            const currentMax = pos.max_price_move_pct || 0;
+            if (priceMovePct > currentMax) {
+                pos.max_price_move_pct = priceMovePct;
+                db.run(`UPDATE positions SET max_price_move_pct = ? WHERE id = ?`, [priceMovePct, pos.id]);
             }
+
+            // Liquidation check
             if (roe <= -100) {
                 console.log(`[LIQN] Triggered for user ${pos.user_id}`);
                 closePosition(pos.user_id, currentPrice);
+                return;
+            }
+
+            // Step 1: User-configured hard TP / SL check
+            if (pos.tpsl_enabled) {
+                if (roe >= pos.tp_roi || roe <= pos.sl_roi) {
+                    console.log(`[TPSL] Triggered for user ${pos.user_id} - ROE: ${roe.toFixed(2)}% (TP: ${pos.tp_roi}%, SL: ${pos.sl_roi}%)`);
+                    closePosition(pos.user_id, currentPrice);
+                    return;
+                }
+            }
+
+            // Step 2 & 3: Extreme Breakout dynamic exits
+            if (pos.signal_type === 'extreme_breakout' && pos.entry_type === 'AUTO') {
+                const entryTimeMs = new Date(pos.entry_time).getTime();
+                const nowMs = Date.now();
+                const elapsedMs = !isNaN(entryTimeMs) ? nowMs - entryTimeMs : 0;
+                const elapsedHours = elapsedMs / (3600 * 1000);
+
+                // Step 3: 36h Timeout Exit
+                if (elapsedHours >= 36) {
+                    console.log(`[ExtremeBreakout] 36h Timeout Exit triggered for user ${pos.user_id}. Elapsed: ${elapsedHours.toFixed(1)}h`);
+                    closePosition(pos.user_id, currentPrice);
+                    return;
+                }
+
+                // Step 2: 24h Delay Breakeven Stop
+                if (elapsedHours >= 24) {
+                    if (!pos.be_activated) {
+                        const mfe = pos.max_price_move_pct || 0;
+                        if (mfe >= 2.0) { // Trade achieved MFE >= 2.0% during first 24h
+                            // If current price at 24h mark is already below BE (+0.10%), market exit immediately
+                            if (priceMovePct < 0.10) {
+                                console.log(`[ExtremeBreakout] 24h Delay BE Market Exit: MFE was ${mfe.toFixed(2)}% but current price is below BE (+0.10%). Exiting.`);
+                                closePosition(pos.user_id, currentPrice);
+                                return;
+                            } else {
+                                console.log(`[ExtremeBreakout] 24h Delay BE Activated: MFE was ${mfe.toFixed(2)}%. Stop raised to entry ± 0.10%.`);
+                                pos.be_activated = 1;
+                                db.run(`UPDATE positions SET be_activated = 1 WHERE id = ?`, [pos.id]);
+                            }
+                        }
+                    } else {
+                        // BE Stop is active: exit if price touches entry ± 0.10%
+                        let beHit = false;
+                        if (pos.side === 'LONG' && currentPrice <= pos.entry_price * 1.0010) {
+                            beHit = true;
+                        } else if (pos.side === 'SHORT' && currentPrice >= pos.entry_price * 0.9990) {
+                            beHit = true;
+                        }
+                        if (beHit) {
+                            console.log(`[ExtremeBreakout] Breakeven Stop Hit for user ${pos.user_id}. Price: ${currentPrice}, Entry: ${pos.entry_price}`);
+                            closePosition(pos.user_id, currentPrice);
+                            return;
+                        }
+                    }
+                }
             }
         });
     });
