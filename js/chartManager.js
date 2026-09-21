@@ -4,7 +4,9 @@ import {
     calculateMTFMacd, 
     calculateMTFStochRSI, 
     calculateSupertrend,
-    calculateMTFVWAPClimax
+    calculateMTFVWAPClimax,
+    calculateExtremeBreakoutMarkers,
+    calculateVolumeBarData
 } from './indicators.js';
 
 export function updateWTPriceLines() {
@@ -311,6 +313,15 @@ export function applyIndicatorMarkers() {
         }
     }
 
+    // 5. Extreme Breakout Markers
+    const toggleEB = document.getElementById('toggle-extreme-breakout');
+    if ((toggleEB && toggleEB.checked) || state.signalType === 'extreme_breakout') {
+        const ebMarkers = calculateExtremeBreakoutMarkers(formattedData);
+        for (let i = 0; i < ebMarkers.length; i++) {
+            markers.push(ebMarkers[i]);
+        }
+    }
+
     markers.sort((a, b) => a.time - b.time);
     state.candleSeries.setMarkers(markers);
 
@@ -437,7 +448,9 @@ export function updateChartSeries() {
     if (state.vwapUpperSeries) state.vwapUpperSeries.setData(vwapData.upperBandData);
     if (state.vwapLowerSeries) state.vwapLowerSeries.setData(vwapData.lowerBandData);
 
-    if (state.volHistSeries && vwapData.volHistData) state.volHistSeries.setData(vwapData.volHistData);
+    const mainVolData = calculateVolumeBarData(formattedData);
+    if (state.mainVolSeries) state.mainVolSeries.setData(mainVolData);
+    if (state.volHistSeries) state.volHistSeries.setData(mainVolData);
     if (state.volMaSeries && vwapData.volMaData) state.volMaSeries.setData(vwapData.volMaData);
     if (state.volSurgeThreshSeries && vwapData.volSurgeThreshData) state.volSurgeThreshSeries.setData(vwapData.volSurgeThreshData);
 
@@ -502,8 +515,13 @@ export function updateIndicatorsLive() {
         state.vwapUpperSeries.update(vwapData.upperBandData[vwapData.upperBandData.length - 1]);
         state.vwapLowerSeries.update(vwapData.lowerBandData[vwapData.lowerBandData.length - 1]);
     }
+    const liveVolData = calculateVolumeBarData(data);
+    if (liveVolData.length > 0) {
+        const lastVolBar = liveVolData[liveVolData.length - 1];
+        if (state.mainVolSeries) state.mainVolSeries.update(lastVolBar);
+        if (state.volHistSeries) state.volHistSeries.update(lastVolBar);
+    }
     if (vwapData.volHistData && vwapData.volHistData.length > 0 && state.volHistSeries) {
-        state.volHistSeries.update(vwapData.volHistData[vwapData.volHistData.length - 1]);
         state.volMaSeries.update(vwapData.volMaData[vwapData.volMaData.length - 1]);
         state.volSurgeThreshSeries.update(vwapData.volSurgeThreshData[vwapData.volSurgeThreshData.length - 1]);
     }
@@ -572,6 +590,27 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
         upColor: '#2ebd85', downColor: '#f6465d',
         borderDownColor: '#f6465d', borderUpColor: '#2ebd85',
         wickDownColor: '#f6465d', wickUpColor: '#2ebd85',
+    });
+
+    state.mainVolSeries = state.chart.addHistogramSeries({
+        priceFormat: { type: 'volume' },
+        priceScaleId: '', // overlay inside main chart
+    });
+
+    // Strictly limit volume bars to bottom 15% of the chart area so they NEVER cover candles
+    state.chart.priceScale('').applyOptions({
+        scaleMargins: {
+            top: 0.85, // top 85% empty for candles, bottom 15% for volume bars
+            bottom: 0,
+        },
+    });
+
+    // Float candlesticks above the volume area so they never overlap
+    state.chart.priceScale('right').applyOptions({
+        scaleMargins: {
+            top: 0.05,
+            bottom: 0.20,
+        },
     });
 
     state.maSeries = state.chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-ma')?.checked });

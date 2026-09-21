@@ -76,6 +76,7 @@ export const state = {
     // Chart Instances & Series References
     chart: null,
     candleSeries: null,
+    mainVolSeries: null,
     maSeries: null,
     bbUpperSeries: null,
     bbLowerSeries: null,

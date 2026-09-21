@@ -121,6 +121,8 @@ db.serialize(() => {
     db.run(`ALTER TABLE accounts ADD COLUMN v_vol_mult REAL DEFAULT 1.8`, () => {});
     db.run(`ALTER TABLE accounts ADD COLUMN v_wick_ratio REAL DEFAULT 0.8`, () => {});
     db.run(`ALTER TABLE accounts ADD COLUMN v_allow_repaint INTEGER DEFAULT 0`, () => {});
+    db.run(`ALTER TABLE positions ADD COLUMN max_price_move_pct REAL DEFAULT 0`, () => {});
+    db.run(`ALTER TABLE positions ADD COLUMN be_activated BOOLEAN DEFAULT 0`, () => {});
 });
 
 module.exports = { db, INITIAL_CAPITAL };

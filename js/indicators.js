@@ -663,3 +663,135 @@ export function calculateMTFVWAPClimax(
         subMarkers
     };
 }
+
+export function calculateExtremeBreakoutMarkers(formattedData) {
+    if (!formattedData || formattedData.length < 30) return [];
+    const len = formattedData.length;
+
+    // 24h (1440m) average 1m volume
+    const lookback24h = Math.min(len, 1440);
+    let sumVol24h = 0;
+    for (let i = len - lookback24h; i < len; i++) {
+        sumVol24h += formattedData[i].volume || 0;
+    }
+    const avg24h1mVol = sumVol24h / lookback24h;
+
+    function getSignalAt(idx) {
+        if (idx < 15) return 0;
+        const curr = formattedData[idx].close;
+        const past = formattedData[idx - 15].close;
+        const ret15 = ((curr - past) / (past + 1e-9)) * 100;
+
+        let vol15 = 0;
+        for (let j = idx - 14; j <= idx; j++) {
+            vol15 += formattedData[j].volume || 0;
+        }
+        const volSurge = vol15 / (avg24h1mVol * 15 + 1e-9);
+
+        let totalPath = 0;
+        for (let j = idx - 14; j <= idx; j++) {
+            totalPath += Math.abs(formattedData[j].close - formattedData[j - 1].close);
+        }
+        const netChange = Math.abs(curr - past);
+        const er = netChange / (totalPath + 1e-9);
+
+        if (volSurge >= 2.5 && er >= 0.45) {
+            if (ret15 >= 0.7) return 1;
+            if (ret15 <= -0.7) return -1;
+        }
+        return 0;
+    }
+
+    const rawSignals = new Array(len).fill(0);
+    for (let i = 15; i < len; i++) {
+        rawSignals[i] = getSignalAt(i);
+    }
+
+    const markers = [];
+    let inRun = false;
+    let runStartIdx = -1;
+    let prevRunLen = 0;
+
+    for (let i = 15; i < len; i++) {
+        const sig = rawSignals[i];
+        if (sig !== 0) {
+            if (!inRun) {
+                inRun = true;
+                runStartIdx = i;
+
+                // A1 Filter check
+                const isBlockedByA1 = prevRunLen >= 5;
+                if (!isBlockedByA1) {
+                    markers.push({
+                        time: formattedData[i].time,
+                        position: sig === 1 ? 'belowBar' : 'aboveBar',
+                        color: sig === 1 ? '#10b981' : '#f43f5e',
+                        shape: sig === 1 ? 'arrowUp' : 'arrowDown',
+                        text: sig === 1 ? 'EB LONG' : 'EB SHORT',
+                        size: 2
+                    });
+                }
+            } else {
+                const isBlockedByA1 = prevRunLen >= 5;
+                if (!isBlockedByA1) {
+                    markers.push({
+                        time: formattedData[i].time,
+                        position: sig === 1 ? 'belowBar' : 'aboveBar',
+                        color: sig === 1 ? '#10b981' : '#f43f5e',
+                        shape: 'circle',
+                        size: 0.8
+                    });
+                }
+            }
+        } else {
+            if (inRun) {
+                prevRunLen = i - runStartIdx;
+                inRun = false;
+                runStartIdx = -1;
+            }
+        }
+    }
+
+    return markers;
+}
+
+export function calculateVolumeBarData(formattedData) {
+    if (!formattedData || formattedData.length === 0) return [];
+    const len = formattedData.length;
+    const lookback24h = Math.min(len, 1440);
+
+    let sumVol24h = 0;
+    for (let i = len - lookback24h; i < len; i++) {
+        sumVol24h += formattedData[i].volume || 0;
+    }
+    const avg24h1mVol = sumVol24h / lookback24h;
+
+    const volBars = [];
+    for (let i = 0; i < len; i++) {
+        const d = formattedData[i];
+        const v = d.volume || 0;
+
+        let vol15 = 0;
+        const start = Math.max(0, i - 14);
+        for (let j = start; j <= i; j++) {
+            vol15 += formattedData[j].volume || 0;
+        }
+        const volSurge = vol15 / (avg24h1mVol * 15 + 1e-9);
+
+        let color = d.close >= d.open ? 'rgba(46, 189, 133, 0.45)' : 'rgba(246, 70, 93, 0.45)';
+        if (volSurge >= 2.5 && v >= avg24h1mVol * 1.5) {
+            // Option C volume explosion: Peak explosion bar highlighted in vibrant Gold
+            color = '#f59e0b';
+        } else if (volSurge >= 2.5) {
+            // Within active surge window: subtle warm amber tint
+            color = d.close >= d.open ? 'rgba(245, 158, 11, 0.5)' : 'rgba(244, 63, 94, 0.5)';
+        }
+
+        volBars.push({
+            time: d.time,
+            value: v,
+            color: color
+        });
+    }
+    return volBars;
+}
