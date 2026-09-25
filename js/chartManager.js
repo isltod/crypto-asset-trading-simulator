@@ -661,40 +661,40 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
     const isFork7Checked = document.getElementById('toggle-fork7')?.checked ?? true;
     state.f7OlsUpperSeries = state.chart.addLineSeries({
         color: '#c084fc',
-        lineWidth: 1.5,
+        lineWidth: 2,
         title: 'F7 OLS +2.0σ',
-        crosshairMarkerVisible: false,
-        lastValueVisible: false,
-        priceLineVisible: false,
+        crosshairMarkerVisible: true,
+        lastValueVisible: true,
+        priceLineVisible: true,
         visible: isFork7Checked
     });
     state.f7OlsLowerSeries = state.chart.addLineSeries({
         color: '#c084fc',
-        lineWidth: 1.5,
+        lineWidth: 2,
         title: 'F7 OLS -2.0σ',
-        crosshairMarkerVisible: false,
-        lastValueVisible: false,
-        priceLineVisible: false,
+        crosshairMarkerVisible: true,
+        lastValueVisible: true,
+        priceLineVisible: true,
         visible: isFork7Checked
     });
     state.f7Pos24LongSeries = state.chart.addLineSeries({
         color: '#34d399',
-        lineWidth: 1,
+        lineWidth: 1.5,
         lineStyle: LightweightCharts.LineStyle.Dashed,
         title: 'F7 pos24 LONG (0.67)',
-        crosshairMarkerVisible: false,
-        lastValueVisible: false,
-        priceLineVisible: false,
+        crosshairMarkerVisible: true,
+        lastValueVisible: true,
+        priceLineVisible: true,
         visible: isFork7Checked
     });
     state.f7Pos24ShortSeries = state.chart.addLineSeries({
         color: '#f87171',
-        lineWidth: 1,
+        lineWidth: 1.5,
         lineStyle: LightweightCharts.LineStyle.Dashed,
         title: 'F7 pos24 SHORT (0.33)',
-        crosshairMarkerVisible: false,
-        lastValueVisible: false,
-        priceLineVisible: false,
+        crosshairMarkerVisible: true,
+        lastValueVisible: true,
+        priceLineVisible: true,
         visible: isFork7Checked
     });
 
@@ -833,6 +833,8 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
             lineStyle: LightweightCharts.LineStyle.Dashed,
             title: 'F7 Node G Vol (5.0σ)',
             crosshairMarkerVisible: true,
+            lastValueVisible: true,
+            priceLineVisible: true,
             visible: isFork7Checked
         });
     }

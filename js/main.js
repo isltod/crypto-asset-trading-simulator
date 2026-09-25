@@ -707,8 +707,36 @@ async function init() {
     document.getElementById('toggle-tpsl')?.addEventListener('change', updateConfig);
     document.getElementById('tp-input')?.addEventListener('change', updateConfig);
     document.getElementById('sl-input')?.addEventListener('change', updateConfig);
+    if (signalSelect) {
+        signalSelect.addEventListener('change', async () => {
+            state.signalType = signalSelect.value || 'none';
+            if (state.signalType === 'extreme_breakout') {
+                const toggleEB = document.getElementById('toggle-extreme-breakout');
+                if (toggleEB && !toggleEB.checked) {
+                    toggleEB.checked = true;
+                }
+            } else if (state.signalType === 'fork7_candidate3') {
+                const toggleFork7 = document.getElementById('toggle-fork7');
+                if (toggleFork7 && !toggleFork7.checked) {
+                    toggleFork7.checked = true;
+                }
+                const toggleVol = document.getElementById('toggle-vol');
+                if (toggleVol && !toggleVol.checked) {
+                    toggleVol.checked = true;
+                    updateVolVisibility();
+                }
+                updateFork7Visibility();
+            }
+            saveUIConfig();
+            applyIndicatorMarkers();
+            updateBotStateBadge();
+            if (state.authToken) {
+                await updateConfig();
+            }
+        });
+    }
+
     if (toggleAutoTrade) toggleAutoTrade.addEventListener('change', updateConfig);
-    if (signalSelect) signalSelect.addEventListener('change', updateConfig);
 
     document.getElementById('toggle-ma')?.addEventListener('change', (e) => {
         if (state.maSeries) state.maSeries.applyOptions({ visible: e.target.checked });
@@ -994,7 +1022,7 @@ async function init() {
 
     // Fork 7 bindings
     const toggleFork7 = document.getElementById('toggle-fork7');
-    const updateFork7Visibility = () => {
+    function updateFork7Visibility() {
         const isVisible = toggleFork7 ? toggleFork7.checked : false;
         if (state.f7OlsUpperSeries) state.f7OlsUpperSeries.applyOptions({ visible: isVisible });
         if (state.f7OlsLowerSeries) state.f7OlsLowerSeries.applyOptions({ visible: isVisible });
@@ -1003,7 +1031,7 @@ async function init() {
         if (state.f7VolThreshSeries) state.f7VolThreshSeries.applyOptions({ visible: isVisible });
         saveUIConfig();
         applyIndicatorMarkers();
-    };
+    }
     toggleFork7?.addEventListener('change', updateFork7Visibility);
 
     const bindVParamInput = (id, isFloat = false, minVal = 0.1) => {
@@ -1051,7 +1079,7 @@ async function init() {
     const volContainer = document.getElementById('vol-chart-container');
     const resizerVol = document.getElementById('chart-resizer-vol');
 
-    const updateVolVisibility = () => {
+    function updateVolVisibility() {
         const isVisible = toggleVol ? toggleVol.checked : false;
         if (isVisible) {
             volContainer?.classList.remove('hidden');
@@ -1061,7 +1089,7 @@ async function init() {
             resizerVol?.classList.add('hidden');
         }
         saveUIConfig();
-    };
+    }
     toggleVol?.addEventListener('change', updateVolVisibility);
 
     // Resizer Dragging Logic
@@ -1272,6 +1300,7 @@ async function init() {
     updateSupertrendVisibility();
     updateVWAPVisibility();
     updateVolVisibility();
+    updateFork7Visibility();
 }
 
 document.addEventListener('DOMContentLoaded', init);
