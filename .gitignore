@@ -3,7 +3,7 @@
 *.sqlite
 *.csv
 models/
-tests/old/
+tests/
 
 # supabase
 .env*

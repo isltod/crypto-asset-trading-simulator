@@ -796,14 +796,35 @@ export function calculateVolumeBarData(formattedData) {
     return volBars;
 }
 
-export function calculateFork7Candidate3Markers(formattedData) {
-    if (!formattedData || formattedData.length < 1440) return [];
+export function calculateFork7Candidate3Markers(formattedData, mtf1h = null) {
+    if (!formattedData || formattedData.length < 2) return [];
     const len = formattedData.length;
 
     const hourlyBars = [];
+    const hKeyToIdx = new Map();
+
+    const first1mHour = Math.floor(formattedData[0].time / 3600) * 3600;
+
+    // 1. Preload preceding 1h bars from MTF cache if available
+    if (mtf1h && mtf1h.length > 0) {
+        for (let i = 0; i < mtf1h.length; i++) {
+            const hb = mtf1h[i];
+            if (hb.time < first1mHour) {
+                hKeyToIdx.set(hb.time, hourlyBars.length);
+                hourlyBars.push({
+                    hKey: hb.time,
+                    high: hb.high,
+                    low: hb.low,
+                    hiMin: 30, // midpoint fallback for pre-loaded 1h bars
+                    loMin: 30
+                });
+            }
+        }
+    }
+
+    // 2. Aggregate 1m bars from formattedData
     let curHKey = null;
     let hHigh = -Infinity, hLow = Infinity, hiMin = 0, loMin = 0;
-    const hKeyToIdx = new Map();
 
     for (let i = 0; i < len; i++) {
         const k = formattedData[i];
@@ -837,7 +858,18 @@ export function calculateFork7Candidate3Markers(formattedData) {
     function getOLS(hKeyCurr) {
         if (olsCache.has(hKeyCurr)) return olsCache.get(hKeyCurr);
 
-        const lastIdx = hKeyToIdx.has(hKeyCurr) ? hKeyToIdx.get(hKeyCurr) : hourlyBars.length;
+        let lastIdx = hourlyBars.length;
+        if (hKeyToIdx.has(hKeyCurr)) {
+            lastIdx = hKeyToIdx.get(hKeyCurr);
+        } else {
+            for (let i = 0; i < hourlyBars.length; i++) {
+                if (hourlyBars[i].hKey >= hKeyCurr) {
+                    lastIdx = i;
+                    break;
+                }
+            }
+        }
+
         if (lastIdx < 24) {
             olsCache.set(hKeyCurr, null);
             return null;
@@ -890,7 +922,7 @@ export function calculateFork7Candidate3Markers(formattedData) {
     const markers = [];
     let cooldownUntilIdx = -1;
 
-    for (let i = 1440; i < len; i++) {
+    for (let i = 1; i < len; i++) {
         if (i < cooldownUntilIdx) continue; // Serial rule: 720m cooldown
 
         const currentTick = formattedData[i];
@@ -922,8 +954,8 @@ export function calculateFork7Candidate3Markers(formattedData) {
         // Node G Detection
         let sigG = 0;
         const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
-        if (Math.abs(lr_curr) >= 0.003) {
-            const lookback = 1440;
+        if (Math.abs(lr_curr) >= 0.003 && i >= 15) {
+            const lookback = Math.min(i, 1440);
             let sum_lr = 0, sum_sq_lr = 0;
             const vols = [];
             for (let j = i - lookback + 1; j <= i; j++) {
@@ -955,10 +987,23 @@ export function calculateFork7Candidate3Markers(formattedData) {
 
         // pos24 filter check
         let hi24 = -Infinity, lo24 = Infinity;
-        for (let j = i - 1439; j <= i; j++) {
+        const startIdx = Math.max(0, i - 1439);
+        for (let j = startIdx; j <= i; j++) {
             if (formattedData[j].high > hi24) hi24 = formattedData[j].high;
             if (formattedData[j].low < lo24) lo24 = formattedData[j].low;
         }
+        if (i < 1439 && mtf1h && mtf1h.length > 0) {
+            const targetStartTime = formattedData[i].time - 86400;
+            for (let k = mtf1h.length - 1; k >= 0; k--) {
+                const hb = mtf1h[k];
+                if (hb.time + 3600 <= targetStartTime) break;
+                if (hb.time < formattedData[0].time) {
+                    if (hb.high > hi24) hi24 = hb.high;
+                    if (hb.low < lo24) lo24 = hb.low;
+                }
+            }
+        }
+
         const range24 = Math.max(1e-9, hi24 - lo24);
         const pos24 = rawSig === 1
             ? (currentTick.close - lo24) / range24

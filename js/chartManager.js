@@ -326,7 +326,8 @@ export function applyIndicatorMarkers() {
     // 6. Fork 7 Candidate 3-EG Markers
     const toggleFork7 = document.getElementById('toggle-fork7');
     if ((toggleFork7 && toggleFork7.checked) || state.signalType === 'fork7_candidate3') {
-        const f7Markers = calculateFork7Candidate3Markers(formattedData);
+        const mtf1h = state.mtfKlines ? state.mtfKlines['1h'] : null;
+        const f7Markers = calculateFork7Candidate3Markers(formattedData, mtf1h);
         for (let i = 0; i < f7Markers.length; i++) {
             markers.push(f7Markers[i]);
         }

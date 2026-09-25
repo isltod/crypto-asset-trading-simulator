@@ -116,10 +116,11 @@ async function loadSymbols() {
 async function loadChartData(symbol) {
     if (state.ws) { state.ws.close(); state.ws = null; }
     try {
-        const [data, mtf15mData, mtf5mData] = await Promise.all([
+        const [data, mtf15mData, mtf5mData, mtf1hData] = await Promise.all([
             fetchKlines(symbol, '1m'),
             fetchMTFKlines(symbol, '15m'),
-            fetchMTFKlines(symbol, '5m')
+            fetchMTFKlines(symbol, '5m'),
+            fetchMTFKlines(symbol, '1h')
         ]);
 
         if (!Array.isArray(data)) {
@@ -128,7 +129,8 @@ async function loadChartData(symbol) {
 
         state.mtfKlines = {
             '15m': Array.isArray(mtf15mData) ? mtf15mData : [],
-            '5m': Array.isArray(mtf5mData) ? mtf5mData : []
+            '5m': Array.isArray(mtf5mData) ? mtf5mData : [],
+            '1h': Array.isArray(mtf1hData) ? mtf1hData : []
         };
 
         state.klineData = data.map(d => ({
