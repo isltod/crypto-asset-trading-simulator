@@ -105,5 +105,12 @@ export const state = {
     volMaSeries: null,
     volSurgeThreshSeries: null,
 
+    // Fork 7 (Candidate 3-EG) Lines & Series
+    f7OlsUpperSeries: null,
+    f7OlsLowerSeries: null,
+    f7Pos24LongSeries: null,
+    f7Pos24ShortSeries: null,
+    f7VolThreshSeries: null,
+
     activeChart: null
 };

@@ -359,6 +359,11 @@ async function updateConfig() {
             const toggleFork7 = document.getElementById('toggle-fork7');
             if (toggleFork7 && !toggleFork7.checked) {
                 toggleFork7.checked = true;
+                if (state.f7OlsUpperSeries) state.f7OlsUpperSeries.applyOptions({ visible: true });
+                if (state.f7OlsLowerSeries) state.f7OlsLowerSeries.applyOptions({ visible: true });
+                if (state.f7Pos24LongSeries) state.f7Pos24LongSeries.applyOptions({ visible: true });
+                if (state.f7Pos24ShortSeries) state.f7Pos24ShortSeries.applyOptions({ visible: true });
+                if (state.f7VolThreshSeries) state.f7VolThreshSeries.applyOptions({ visible: true });
                 saveUIConfig();
             }
         }
@@ -488,6 +493,11 @@ function loadUIConfig() {
             }
             if (typeof config.showFork7 === 'boolean' && document.getElementById('toggle-fork7')) {
                 document.getElementById('toggle-fork7').checked = config.showFork7;
+                if (state.f7OlsUpperSeries) state.f7OlsUpperSeries.applyOptions({ visible: config.showFork7 });
+                if (state.f7OlsLowerSeries) state.f7OlsLowerSeries.applyOptions({ visible: config.showFork7 });
+                if (state.f7Pos24LongSeries) state.f7Pos24LongSeries.applyOptions({ visible: config.showFork7 });
+                if (state.f7Pos24ShortSeries) state.f7Pos24ShortSeries.applyOptions({ visible: config.showFork7 });
+                if (state.f7VolThreshSeries) state.f7VolThreshSeries.applyOptions({ visible: config.showFork7 });
             }
             if (typeof config.showSupertrend === 'boolean' && document.getElementById('toggle-supertrend')) {
                 document.getElementById('toggle-supertrend').checked = config.showSupertrend;
@@ -984,10 +994,17 @@ async function init() {
 
     // Fork 7 bindings
     const toggleFork7 = document.getElementById('toggle-fork7');
-    toggleFork7?.addEventListener('change', () => {
+    const updateFork7Visibility = () => {
+        const isVisible = toggleFork7 ? toggleFork7.checked : false;
+        if (state.f7OlsUpperSeries) state.f7OlsUpperSeries.applyOptions({ visible: isVisible });
+        if (state.f7OlsLowerSeries) state.f7OlsLowerSeries.applyOptions({ visible: isVisible });
+        if (state.f7Pos24LongSeries) state.f7Pos24LongSeries.applyOptions({ visible: isVisible });
+        if (state.f7Pos24ShortSeries) state.f7Pos24ShortSeries.applyOptions({ visible: isVisible });
+        if (state.f7VolThreshSeries) state.f7VolThreshSeries.applyOptions({ visible: isVisible });
         saveUIConfig();
         applyIndicatorMarkers();
-    });
+    };
+    toggleFork7?.addEventListener('change', updateFork7Visibility);
 
     const bindVParamInput = (id, isFloat = false, minVal = 0.1) => {
         const input = document.getElementById(id);
