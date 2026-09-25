@@ -351,6 +351,168 @@ function calculateExtremeBreakout(klines) {
     return currentSig === 1 ? 'LONG' : 'SHORT';
 }
 
+function calculateFork7Candidate3(klines) {
+    if (!klines || klines.length < 1440) return 'HOLD';
+
+    const len = klines.length;
+    const currentTick = klines[len - 1];
+    const prevTick = klines[len - 2];
+
+    // 1. Group klines into hourly bars to get 24-hour OLS Regression
+    const hourlyBars = [];
+    let curHKey = null;
+    let hHigh = -Infinity, hLow = Infinity, hiMin = 0, loMin = 0;
+
+    const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
+
+    for (let i = 0; i < len; i++) {
+        const k = klines[i];
+        const hKey = Math.floor(k.time / 3600) * 3600;
+        if (hKey === currentHourKey) continue; // Only take completed hours before current hour
+
+        if (curHKey === null || hKey !== curHKey) {
+            if (curHKey !== null) {
+                hourlyBars.push({ hKey: curHKey, high: hHigh, low: hLow, hiMin, loMin });
+            }
+            curHKey = hKey;
+            hHigh = k.high;
+            hLow = k.low;
+            hiMin = Math.floor((k.time % 3600) / 60);
+            loMin = hiMin;
+        } else {
+            const m = Math.floor((k.time % 3600) / 60);
+            if (k.high > hHigh) {
+                hHigh = k.high;
+                hiMin = m;
+            }
+            if (k.low < hLow) {
+                hLow = k.low;
+                loMin = m;
+            }
+        }
+    }
+    if (curHKey !== null) {
+        hourlyBars.push({ hKey: curHKey, high: hHigh, low: hLow, hiMin, loMin });
+    }
+
+    if (hourlyBars.length < 24) return 'HOLD';
+    const last24Hours = hourlyBars.slice(-24);
+
+    // OLS Linear Regression for Highs and Lows over 24 hours
+    let sumX_hi = 0, sumY_hi = 0, sumX_lo = 0, sumY_lo = 0;
+    const ptsHi = [], ptsLo = [];
+    for (let i = 0; i < 24; i++) {
+        const hb = last24Hours[i];
+        const x_hi = i + hb.hiMin / 60.0;
+        const y_hi = hb.high;
+        const x_lo = i + hb.loMin / 60.0;
+        const y_lo = hb.low;
+        ptsHi.push({ x: x_hi, y: y_hi });
+        ptsLo.push({ x: x_lo, y: y_lo });
+        sumX_hi += x_hi; sumY_hi += y_hi;
+        sumX_lo += x_lo; sumY_lo += y_lo;
+    }
+    const meanX_hi = sumX_hi / 24, meanY_hi = sumY_hi / 24;
+    const meanX_lo = sumX_lo / 24, meanY_lo = sumY_lo / 24;
+
+    let num_hi = 0, den_hi = 0, num_lo = 0, den_lo = 0;
+    for (let i = 0; i < 24; i++) {
+        num_hi += (ptsHi[i].x - meanX_hi) * (ptsHi[i].y - meanY_hi);
+        den_hi += Math.pow(ptsHi[i].x - meanX_hi, 2);
+        num_lo += (ptsLo[i].x - meanX_lo) * (ptsLo[i].y - meanY_lo);
+        den_lo += Math.pow(ptsLo[i].x - meanX_lo, 2);
+    }
+    const A1 = den_hi > 1e-9 ? num_hi / den_hi : 0;
+    const A0 = meanY_hi - A1 * meanX_hi;
+    const B1 = den_lo > 1e-9 ? num_lo / den_lo : 0;
+    const B0 = meanY_lo - B1 * meanX_lo;
+
+    let resSum_hi = 0, resSum_lo = 0;
+    for (let i = 0; i < 24; i++) {
+        const pred_hi = A0 + A1 * ptsHi[i].x;
+        const pred_lo = B0 + B1 * ptsLo[i].x;
+        resSum_hi += Math.pow(ptsHi[i].y - pred_hi, 2);
+        resSum_lo += Math.pow(ptsLo[i].y - pred_lo, 2);
+    }
+    const sigma_hi = Math.sqrt(resSum_hi / 22) + 1e-9;
+    const sigma_lo = Math.sqrt(resSum_lo / 22) + 1e-9;
+
+    // Current bar minute in hour
+    const curMin = Math.floor((currentTick.time % 3600) / 60);
+    const xx_curr = 24 + curMin / 60.0;
+    const pred_hi_curr = A0 + A1 * xx_curr;
+    const pred_lo_curr = B0 + B1 * xx_curr;
+    const zU_curr = (currentTick.close - pred_hi_curr) / sigma_hi;
+    const zL_curr = (pred_lo_curr - currentTick.close) / sigma_lo;
+
+    // Prev bar minute in hour
+    const prevMin = Math.floor((prevTick.time % 3600) / 60);
+    const xx_prev = (Math.floor(prevTick.time / 3600) * 3600 === currentHourKey ? 24 : 23) + prevMin / 60.0;
+    const pred_hi_prev = A0 + A1 * xx_prev;
+    const pred_lo_prev = B0 + B1 * xx_prev;
+    const zU_prev = (prevTick.close - pred_hi_prev) / sigma_hi;
+    const zL_prev = (pred_lo_prev - prevTick.close) / sigma_lo;
+
+    // 2. Node E Detection (Band 2.0 sigma transition)
+    let sigE = 0;
+    if (zU_prev < 2.0 && zU_curr >= 2.0) sigE = 1;
+    else if (zL_prev < 2.0 && zL_curr >= 2.0) sigE = -1;
+
+    // 3. Node G Detection (1m volatility / volume explosion)
+    const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
+    const lookback = Math.min(len - 1, 1440);
+    let sum_lr = 0, sum_sq_lr = 0;
+    const vols = [];
+    for (let j = len - lookback; j < len; j++) {
+        const lr = Math.log(klines[j].close / (klines[j - 1].close + 1e-9));
+        sum_lr += lr;
+        sum_sq_lr += lr * lr;
+        vols.push(klines[j].volume || 0);
+    }
+    const mean_lr = sum_lr / lookback;
+    const var_lr = Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr);
+    const std_lr = Math.sqrt(var_lr);
+    const z_ret = (lr_curr - mean_lr) / std_lr;
+
+    // Median and MAD of volume
+    vols.sort((a, b) => a - b);
+    const midIdx = Math.floor(vols.length / 2);
+    const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
+    const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
+    const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
+    const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
+
+    let sigG = 0;
+    if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0) {
+        if (lr_curr > 0 && zU_curr >= 1.0) sigG = 1;
+        else if (lr_curr < 0 && zL_curr >= 1.0) sigG = -1;
+    }
+
+    // Combine E and G (E takes priority)
+    const rawSig = sigE !== 0 ? sigE : sigG;
+    if (rawSig === 0) return 'HOLD';
+
+    // 4. pos24 Filter check
+    let hi24 = -Infinity, lo24 = Infinity;
+    for (let j = len - lookback; j < len; j++) {
+        if (klines[j].high > hi24) hi24 = klines[j].high;
+        if (klines[j].low < lo24) lo24 = klines[j].low;
+    }
+    const range24 = Math.max(1e-9, hi24 - lo24);
+    const pos24 = rawSig === 1 
+        ? (currentTick.close - lo24) / range24 
+        : (hi24 - currentTick.close) / range24;
+
+    // Upper 1/3 threshold requirement (pos24 >= 0.67)
+    if (pos24 < 0.67) {
+        console.log(`[Fork 7] ${rawSig === 1 ? 'LONG' : 'SHORT'} (Node ${sigE !== 0 ? 'E' : 'G'}) pos24=${pos24.toFixed(3)} < 0.67. Filtered out.`);
+        return 'HOLD';
+    }
+
+    console.log(`[Fork 7] Signal APPROVED: ${rawSig === 1 ? 'LONG' : 'SHORT'} via Node ${sigE !== 0 ? 'E' : 'G'}. pos24=${pos24.toFixed(3)}, zU=${zU_curr.toFixed(2)}, zL=${zL_curr.toFixed(2)}`);
+    return rawSig === 1 ? 'LONG' : 'SHORT';
+}
+
 module.exports = {
     calculateEMA,
     calculateWaveTrend,
@@ -359,5 +521,6 @@ module.exports = {
     calculateRSI,
     calculateStochRSI,
     calculateVWAPClimax,
-    calculateExtremeBreakout
+    calculateExtremeBreakout,
+    calculateFork7Candidate3
 };

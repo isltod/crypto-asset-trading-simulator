@@ -2,8 +2,10 @@ const path = require('path');
 const fs = require('fs');
 const { db } = require('../config/db');
 const { klineHistories, klineHistoriesMTF } = require('./marketService');
-const { aggregateKlines, calculateWaveTrend, calculateMACDForKlines, calculateStochRSI, calculateVWAPClimax, calculateExtremeBreakout } = require('./indicatorService');
+const { aggregateKlines, calculateWaveTrend, calculateMACDForKlines, calculateStochRSI, calculateVWAPClimax, calculateExtremeBreakout, calculateFork7Candidate3 } = require('./indicatorService');
 const { openPositionInternal, closePosition } = require('./tradeService');
+
+const fork7CooldownMap = new Map();
 
 let ort = null;
 try {
@@ -133,7 +135,7 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
     const history = klineHistories[symbol];
     if (!history || history.length < 50) return;
 
-    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd', 'stoch_rsi', 'v_climax', 'extreme_breakout')`, (err, accounts) => {
+    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd', 'stoch_rsi', 'v_climax', 'extreme_breakout', 'fork7_candidate3')`, (err, accounts) => {
         if (err || !accounts || accounts.length === 0) return;
 
         accounts.forEach(async (account) => {
@@ -142,7 +144,17 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
             const userId = account.user_id;
             let signal = null;
 
-            if (account.signal_type === 'extreme_breakout') {
+            if (account.signal_type === 'fork7_candidate3') {
+                if (!isClosed) return; // 1m bar close only
+                if (symbol.toUpperCase() !== 'BTCUSDT') return; // BTCUSDT only
+
+                // No Re-entry check (hold Cash until original 720m expiry)
+                const cooldownUntil = fork7CooldownMap.get(userId) || 0;
+                if (Date.now() < cooldownUntil) {
+                    return;
+                }
+                signal = calculateFork7Candidate3(history);
+            } else if (account.signal_type === 'extreme_breakout') {
                 if (!isClosed) return; // 1m bar close only
                 if (symbol.toUpperCase() !== 'BTCUSDT') return; // BTCUSDT only
                 signal = calculateExtremeBreakout(history);
@@ -366,8 +378,8 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                     if (err) return;
                     
                     if (pos) {
-                        if (account.signal_type === 'extreme_breakout') {
-                            // Extreme Breakout serial rule: skip all signals while in position
+                        if (account.signal_type === 'extreme_breakout' || account.signal_type === 'fork7_candidate3') {
+                            // Serial rule: skip all signals while in position
                             return;
                         }
                         if (pos.symbol !== symbol) {
@@ -380,23 +392,27 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                         } else {
                             console.log(`[AutoTrade] Opposite signal ${signal} detected. Closing current ${pos.side} position on ${symbol} for ${account.username}`);
                             closePosition(userId, currentPrice, null, (success) => {
-                                if (success) {
-                                    setTimeout(() => {
-                                        openPositionInternal(userId, symbol, signal, currentPrice);
-                                    }, 500);
-                                }
-                            });
-                        }
-                    } else {
-                        openPositionInternal(userId, symbol, signal, currentPrice);
-                    }
-                });
-            }
-        });
-    });
-}
+                                 if (success) {
+                                     setTimeout(() => {
+                                         openPositionInternal(userId, symbol, signal, currentPrice);
+                                     }, 500);
+                                 }
+                             });
+                         }
+                     } else {
+                         if (account.signal_type === 'fork7_candidate3') {
+                             fork7CooldownMap.set(userId, Date.now() + 720 * 60 * 1000);
+                         }
+                         openPositionInternal(userId, symbol, signal, currentPrice);
+                     }
+                 });
+             }
+         });
+     });
+ }
 
 module.exports = {
-    checkAutoTradeSignals,
-    getRLSignal
-};
+     checkAutoTradeSignals,
+     getRLSignal,
+     fork7CooldownMap
+ };

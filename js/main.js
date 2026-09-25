@@ -352,6 +352,12 @@ async function updateConfig() {
                 toggleEB.checked = true;
                 saveUIConfig();
             }
+        } else if (state.signalType === 'fork7_candidate3') {
+            const toggleFork7 = document.getElementById('toggle-fork7');
+            if (toggleFork7 && !toggleFork7.checked) {
+                toggleFork7.checked = true;
+                saveUIConfig();
+            }
         }
         applyIndicatorMarkers();
         updateBotStateBadge();
@@ -392,6 +398,7 @@ function saveUIConfig() {
         wtAllowRepaint: document.getElementById('wt-allow-repaint')?.checked || false,
         wtIgnoreObos: document.getElementById('wt-ignore-obos')?.checked || false,
         showExtremeBreakout: document.getElementById('toggle-extreme-breakout')?.checked ?? true,
+        showFork7: document.getElementById('toggle-fork7')?.checked ?? true,
         showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
         supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
         supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0'),
@@ -475,6 +482,9 @@ function loadUIConfig() {
             }
             if (typeof config.showExtremeBreakout === 'boolean' && document.getElementById('toggle-extreme-breakout')) {
                 document.getElementById('toggle-extreme-breakout').checked = config.showExtremeBreakout;
+            }
+            if (typeof config.showFork7 === 'boolean' && document.getElementById('toggle-fork7')) {
+                document.getElementById('toggle-fork7').checked = config.showFork7;
             }
             if (typeof config.showSupertrend === 'boolean' && document.getElementById('toggle-supertrend')) {
                 document.getElementById('toggle-supertrend').checked = config.showSupertrend;
@@ -965,6 +975,13 @@ async function init() {
     // Extreme Breakout bindings
     const toggleEB = document.getElementById('toggle-extreme-breakout');
     toggleEB?.addEventListener('change', () => {
+        saveUIConfig();
+        applyIndicatorMarkers();
+    });
+
+    // Fork 7 bindings
+    const toggleFork7 = document.getElementById('toggle-fork7');
+    toggleFork7?.addEventListener('change', () => {
         saveUIConfig();
         applyIndicatorMarkers();
     });

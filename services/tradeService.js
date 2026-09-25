@@ -1,5 +1,17 @@
+const path = require('path');
+const fs = require('fs');
 const { db } = require('../config/db');
 const { latestPrices } = require('./marketService');
+
+let fork7Params = null;
+try {
+    const p = path.join(__dirname, '../config/fork7_candidate3_params.json');
+    if (fs.existsSync(p)) {
+        fork7Params = JSON.parse(fs.readFileSync(p, 'utf8'));
+    }
+} catch (e) {
+    console.error("[Fork 7] Failed to load fork7_candidate3_params.json:", e.message);
+}
 
 const closingUsers = new Set();
 const openingUsers = new Set();
@@ -229,6 +241,47 @@ function checkTPSL(symbol, currentPrice) {
                             console.log(`[ExtremeBreakout] Breakeven Stop Hit for user ${pos.user_id}. Price: ${currentPrice}, Entry: ${pos.entry_price}`);
                             closePosition(pos.user_id, currentPrice);
                             return;
+                        }
+                    }
+                }
+            }
+
+            // Step 4: Fork 7 Candidate 3-EG Firewall Exits
+            if (pos.signal_type === 'fork7_candidate3' && pos.entry_type === 'AUTO') {
+                const entryTimeMs = new Date(pos.entry_time).getTime();
+                const nowMs = Date.now();
+                const elapsedMs = !isNaN(entryTimeMs) ? nowMs - entryTimeMs : 0;
+                const elapsedMin = Math.floor(elapsedMs / 60000);
+
+                // 1. 720m (12h) Expiry Exit
+                if (elapsedMin >= 720) {
+                    console.log(`[Fork 7] 720m Expiry Exit triggered for user ${pos.user_id}. Elapsed: ${elapsedMin}m`);
+                    closePosition(pos.user_id, currentPrice);
+                    return;
+                }
+
+                if (fork7Params) {
+                    const priceMoveBp = priceMovePct * 100; // 1% = 100 bp
+                    const mfeBp = (pos.max_price_move_pct || 0) * 100;
+
+                    // 2. 1-minute Micro Firewall (-43.1 bp cut)
+                    if (elapsedMin >= 1 && elapsedMin < 5) {
+                        if (priceMoveBp <= fork7Params.cut_1m_bp) {
+                            console.log(`[Fork 7] 1m Micro Firewall triggered for user ${pos.user_id}. Return: ${priceMoveBp.toFixed(1)} bp <= ${fork7Params.cut_1m_bp} bp`);
+                            closePosition(pos.user_id, currentPrice);
+                            return;
+                        }
+                    }
+
+                    // 3. Dynamic Non-parametric Envelope Cut (t >= 45m, p_t <= Q07, MFE <= 100 bp)
+                    if (elapsedMin >= fork7Params.t_min && elapsedMin < fork7Params.H_MAX) {
+                        const q07 = fork7Params.q07_curve[elapsedMin];
+                        if (q07 !== undefined) {
+                            if (priceMoveBp <= q07 && mfeBp <= fork7Params.mfe_cap_bp) {
+                                console.log(`[Fork 7] Dynamic Envelope Q07 Cut triggered for user ${pos.user_id}. Elapsed: ${elapsedMin}m, Return: ${priceMoveBp.toFixed(1)} bp <= Q07: ${q07.toFixed(1)} bp (MFE: ${mfeBp.toFixed(1)} bp <= 100 bp)`);
+                                closePosition(pos.user_id, currentPrice);
+                                return;
+                            }
                         }
                     }
                 }
