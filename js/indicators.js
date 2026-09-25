@@ -796,14 +796,33 @@ export function calculateVolumeBarData(formattedData) {
     return volBars;
 }
 
-export function calculateFork7Candidate3Markers(formattedData) {
-    if (!formattedData || formattedData.length < 1440) return [];
+function buildFork7Context(formattedData, mtf1h = null) {
     const len = formattedData.length;
-
     const hourlyBars = [];
+    const hKeyToIdx = new Map();
+
+    const first1mHour = Math.floor(formattedData[0].time / 3600) * 3600;
+
+    // 1. Preload preceding 1h bars from MTF cache if available
+    if (mtf1h && mtf1h.length > 0) {
+        for (let i = 0; i < mtf1h.length; i++) {
+            const hb = mtf1h[i];
+            if (hb.time < first1mHour) {
+                hKeyToIdx.set(hb.time, hourlyBars.length);
+                hourlyBars.push({
+                    hKey: hb.time,
+                    high: hb.high,
+                    low: hb.low,
+                    hiMin: 30, // midpoint fallback for pre-loaded 1h bars
+                    loMin: 30
+                });
+            }
+        }
+    }
+
+    // 2. Aggregate 1m bars from formattedData
     let curHKey = null;
     let hHigh = -Infinity, hLow = Infinity, hiMin = 0, loMin = 0;
-    const hKeyToIdx = new Map();
 
     for (let i = 0; i < len; i++) {
         const k = formattedData[i];
@@ -837,7 +856,18 @@ export function calculateFork7Candidate3Markers(formattedData) {
     function getOLS(hKeyCurr) {
         if (olsCache.has(hKeyCurr)) return olsCache.get(hKeyCurr);
 
-        const lastIdx = hKeyToIdx.has(hKeyCurr) ? hKeyToIdx.get(hKeyCurr) : hourlyBars.length;
+        let lastIdx = hourlyBars.length;
+        if (hKeyToIdx.has(hKeyCurr)) {
+            lastIdx = hKeyToIdx.get(hKeyCurr);
+        } else {
+            for (let i = 0; i < hourlyBars.length; i++) {
+                if (hourlyBars[i].hKey >= hKeyCurr) {
+                    lastIdx = i;
+                    break;
+                }
+            }
+        }
+
         if (lastIdx < 24) {
             olsCache.set(hKeyCurr, null);
             return null;
@@ -887,12 +917,105 @@ export function calculateFork7Candidate3Markers(formattedData) {
         return model;
     }
 
+    return { getOLS };
+}
+
+export function calculateFork7SeriesData(formattedData, mtf1h = null) {
+    if (!formattedData || formattedData.length === 0) {
+        return {
+            olsUpperData: [],
+            olsLowerData: [],
+            pos24LongData: [],
+            pos24ShortData: [],
+            volThreshData: []
+        };
+    }
+
+    const { getOLS } = buildFork7Context(formattedData, mtf1h);
+    const len = formattedData.length;
+
+    const olsUpperData = [];
+    const olsLowerData = [];
+    const pos24LongData = [];
+    const pos24ShortData = [];
+    const volThreshData = [];
+
+    let lastVolThresh = 0;
+
+    for (let i = 0; i < len; i++) {
+        const tick = formattedData[i];
+        const hKey = Math.floor(tick.time / 3600) * 3600;
+        const model = getOLS(hKey);
+
+        if (model) {
+            const m = Math.floor((tick.time % 3600) / 60);
+            const xx = 24 + m / 60.0;
+            const pred_hi = model.A0 + model.A1 * xx;
+            const pred_lo = model.B0 + model.B1 * xx;
+            olsUpperData.push({ time: tick.time, value: pred_hi + 2.0 * model.sigma_hi });
+            olsLowerData.push({ time: tick.time, value: pred_lo - 2.0 * model.sigma_lo });
+        }
+
+        // pos24 bounds
+        let hi24 = -Infinity, lo24 = Infinity;
+        const startIdx = Math.max(0, i - 1439);
+        for (let j = startIdx; j <= i; j++) {
+            if (formattedData[j].high > hi24) hi24 = formattedData[j].high;
+            if (formattedData[j].low < lo24) lo24 = formattedData[j].low;
+        }
+        if (i < 1439 && mtf1h && mtf1h.length > 0) {
+            const targetStartTime = formattedData[i].time - 86400;
+            for (let k = mtf1h.length - 1; k >= 0; k--) {
+                const hb = mtf1h[k];
+                if (hb.time + 3600 <= targetStartTime) break;
+                if (hb.time < formattedData[0].time) {
+                    if (hb.high > hi24) hi24 = hb.high;
+                    if (hb.low < lo24) lo24 = hb.low;
+                }
+            }
+        }
+        const range24 = Math.max(1e-9, hi24 - lo24);
+        pos24LongData.push({ time: tick.time, value: lo24 + 0.67 * range24 });
+        pos24ShortData.push({ time: tick.time, value: lo24 + 0.33 * range24 });
+
+        // Node G Volume threshold (5.0σ MAD)
+        if (i % 5 === 0 || lastVolThresh === 0) {
+            const lookback = Math.min(i, 1440);
+            if (lookback >= 15) {
+                const vols = [];
+                for (let j = i - lookback + 1; j <= i; j++) vols.push(formattedData[j].volume || 0);
+                vols.sort((a, b) => a - b);
+                const midIdx = Math.floor(vols.length / 2);
+                const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
+                const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
+                const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
+                lastVolThresh = med_vol + 5.0 * mad_vol;
+            }
+        }
+        if (lastVolThresh > 0) {
+            volThreshData.push({ time: tick.time, value: lastVolThresh });
+        }
+    }
+
+    return {
+        olsUpperData,
+        olsLowerData,
+        pos24LongData,
+        pos24ShortData,
+        volThreshData
+    };
+}
+
+export function calculateFork7Candidate3Markers(formattedData, mtf1h = null) {
+    if (!formattedData || formattedData.length < 2) return [];
+    const len = formattedData.length;
+
+    const { getOLS } = buildFork7Context(formattedData, mtf1h);
+
     const markers = [];
     let cooldownUntilIdx = -1;
 
-    for (let i = 1440; i < len; i++) {
-        if (i < cooldownUntilIdx) continue; // Serial rule: 720m cooldown
-
+    for (let i = 1; i < len; i++) {
         const currentTick = formattedData[i];
         const prevTick = formattedData[i - 1];
         const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
@@ -922,8 +1045,8 @@ export function calculateFork7Candidate3Markers(formattedData) {
         // Node G Detection
         let sigG = 0;
         const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
-        if (Math.abs(lr_curr) >= 0.003) {
-            const lookback = 1440;
+        if (Math.abs(lr_curr) >= 0.003 && i >= 15) {
+            const lookback = Math.min(i, 1440);
             let sum_lr = 0, sum_sq_lr = 0;
             const vols = [];
             for (let j = i - lookback + 1; j <= i; j++) {
@@ -955,17 +1078,55 @@ export function calculateFork7Candidate3Markers(formattedData) {
 
         // pos24 filter check
         let hi24 = -Infinity, lo24 = Infinity;
-        for (let j = i - 1439; j <= i; j++) {
+        const startIdx = Math.max(0, i - 1439);
+        for (let j = startIdx; j <= i; j++) {
             if (formattedData[j].high > hi24) hi24 = formattedData[j].high;
             if (formattedData[j].low < lo24) lo24 = formattedData[j].low;
         }
+        if (i < 1439 && mtf1h && mtf1h.length > 0) {
+            const targetStartTime = formattedData[i].time - 86400;
+            for (let k = mtf1h.length - 1; k >= 0; k--) {
+                const hb = mtf1h[k];
+                if (hb.time + 3600 <= targetStartTime) break;
+                if (hb.time < formattedData[0].time) {
+                    if (hb.high > hi24) hi24 = hb.high;
+                    if (hb.low < lo24) lo24 = hb.low;
+                }
+            }
+        }
+
         const range24 = Math.max(1e-9, hi24 - lo24);
         const pos24 = rawSig === 1
             ? (currentTick.close - lo24) / range24
             : (hi24 - currentTick.close) / range24;
 
-        if (pos24 < 0.67) continue;
+        // 1. pos24 Filter Rejection Sub-marker
+        if (pos24 < 0.67) {
+            markers.push({
+                time: currentTick.time,
+                position: rawSig === 1 ? 'belowBar' : 'aboveBar',
+                color: '#f59e0b', // Amber/orange circle
+                shape: 'circle',
+                text: `F7 Fltr (${(pos24 * 100).toFixed(0)}%)`,
+                size: 0.8
+            });
+            continue;
+        }
 
+        // 2. Cooldown Active Sub-marker
+        if (i < cooldownUntilIdx) {
+            markers.push({
+                time: currentTick.time,
+                position: rawSig === 1 ? 'belowBar' : 'aboveBar',
+                color: '#a855f7', // Purple circle
+                shape: 'circle',
+                text: 'F7 CD',
+                size: 0.8
+            });
+            continue;
+        }
+
+        // 3. Approved Entry Signal
         markers.push({
             time: currentTick.time,
             position: rawSig === 1 ? 'belowBar' : 'aboveBar',
