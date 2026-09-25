@@ -29,8 +29,13 @@ const BASE_PATH = '/cats';
 
 // Middleware
 app.use(express.json());
-app.use(cors());
-app.use(BASE_PATH, express.static(path.join(__dirname, '/')));
+app.use(BASE_PATH, express.static(path.join(__dirname, '/'), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html') || filePath.endsWith('.js')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+    }
+}));
 app.get('/', (req, res) => res.redirect(BASE_PATH + '/'));
 
 // Routes

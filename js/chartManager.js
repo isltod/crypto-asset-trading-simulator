@@ -6,6 +6,7 @@ import {
     calculateSupertrend,
     calculateMTFVWAPClimax,
     calculateExtremeBreakoutMarkers,
+    calculateFork7Candidate3Markers,
     calculateVolumeBarData
 } from './indicators.js';
 
@@ -319,6 +320,15 @@ export function applyIndicatorMarkers() {
         const ebMarkers = calculateExtremeBreakoutMarkers(formattedData);
         for (let i = 0; i < ebMarkers.length; i++) {
             markers.push(ebMarkers[i]);
+        }
+    }
+
+    // 6. Fork 7 Candidate 3-EG Markers
+    const toggleFork7 = document.getElementById('toggle-fork7');
+    if ((toggleFork7 && toggleFork7.checked) || state.signalType === 'fork7_candidate3') {
+        const f7Markers = calculateFork7Candidate3Markers(formattedData);
+        for (let i = 0; i < f7Markers.length; i++) {
+            markers.push(f7Markers[i]);
         }
     }
 

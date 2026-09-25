@@ -795,3 +795,188 @@ export function calculateVolumeBarData(formattedData) {
     }
     return volBars;
 }
+
+export function calculateFork7Candidate3Markers(formattedData) {
+    if (!formattedData || formattedData.length < 1440) return [];
+    const len = formattedData.length;
+
+    const hourlyBars = [];
+    let curHKey = null;
+    let hHigh = -Infinity, hLow = Infinity, hiMin = 0, loMin = 0;
+    const hKeyToIdx = new Map();
+
+    for (let i = 0; i < len; i++) {
+        const k = formattedData[i];
+        const hKey = Math.floor(k.time / 3600) * 3600;
+        const m = Math.floor((k.time % 3600) / 60);
+
+        if (curHKey === null || hKey !== curHKey) {
+            if (curHKey !== null) {
+                hKeyToIdx.set(curHKey, hourlyBars.length);
+                hourlyBars.push({ hKey: curHKey, high: hHigh, low: hLow, hiMin, loMin });
+            }
+            curHKey = hKey;
+            hHigh = k.high;
+            hLow = k.low;
+            hiMin = m;
+            loMin = m;
+        } else {
+            if (k.high > hHigh) {
+                hHigh = k.high;
+                hiMin = m;
+            }
+            if (k.low < hLow) {
+                hLow = k.low;
+                loMin = m;
+            }
+        }
+    }
+
+    const olsCache = new Map();
+
+    function getOLS(hKeyCurr) {
+        if (olsCache.has(hKeyCurr)) return olsCache.get(hKeyCurr);
+
+        const lastIdx = hKeyToIdx.has(hKeyCurr) ? hKeyToIdx.get(hKeyCurr) : hourlyBars.length;
+        if (lastIdx < 24) {
+            olsCache.set(hKeyCurr, null);
+            return null;
+        }
+
+        const last24 = hourlyBars.slice(lastIdx - 24, lastIdx);
+        let sumX_hi = 0, sumY_hi = 0, sumX_lo = 0, sumY_lo = 0;
+        const ptsHi = [], ptsLo = [];
+        for (let i = 0; i < 24; i++) {
+            const hb = last24[i];
+            const x_hi = i + hb.hiMin / 60.0;
+            const y_hi = hb.high;
+            const x_lo = i + hb.loMin / 60.0;
+            const y_lo = hb.low;
+            ptsHi.push({ x: x_hi, y: y_hi });
+            ptsLo.push({ x: x_lo, y: y_lo });
+            sumX_hi += x_hi; sumY_hi += y_hi;
+            sumX_lo += x_lo; sumY_lo += y_lo;
+        }
+        const meanX_hi = sumX_hi / 24, meanY_hi = sumY_hi / 24;
+        const meanX_lo = sumX_lo / 24, meanY_lo = sumY_lo / 24;
+
+        let num_hi = 0, den_hi = 0, num_lo = 0, den_lo = 0;
+        for (let i = 0; i < 24; i++) {
+            num_hi += (ptsHi[i].x - meanX_hi) * (ptsHi[i].y - meanY_hi);
+            den_hi += Math.pow(ptsHi[i].x - meanX_hi, 2);
+            num_lo += (ptsLo[i].x - meanX_lo) * (ptsLo[i].y - meanY_lo);
+            den_lo += Math.pow(ptsLo[i].x - meanX_lo, 2);
+        }
+        const A1 = den_hi > 1e-9 ? num_hi / den_hi : 0;
+        const A0 = meanY_hi - A1 * meanX_hi;
+        const B1 = den_lo > 1e-9 ? num_lo / den_lo : 0;
+        const B0 = meanY_lo - B1 * meanX_lo;
+
+        let resSum_hi = 0, resSum_lo = 0;
+        for (let i = 0; i < 24; i++) {
+            const pred_hi = A0 + A1 * ptsHi[i].x;
+            const pred_lo = B0 + B1 * ptsLo[i].x;
+            resSum_hi += Math.pow(ptsHi[i].y - pred_hi, 2);
+            resSum_lo += Math.pow(ptsLo[i].y - pred_lo, 2);
+        }
+        const sigma_hi = Math.sqrt(resSum_hi / 22) + 1e-9;
+        const sigma_lo = Math.sqrt(resSum_lo / 22) + 1e-9;
+
+        const model = { A0, A1, B0, B1, sigma_hi, sigma_lo };
+        olsCache.set(hKeyCurr, model);
+        return model;
+    }
+
+    const markers = [];
+    let cooldownUntilIdx = -1;
+
+    for (let i = 1440; i < len; i++) {
+        if (i < cooldownUntilIdx) continue; // Serial rule: 720m cooldown
+
+        const currentTick = formattedData[i];
+        const prevTick = formattedData[i - 1];
+        const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
+
+        const model = getOLS(currentHourKey);
+        if (!model) continue;
+
+        const curMin = Math.floor((currentTick.time % 3600) / 60);
+        const xx_curr = 24 + curMin / 60.0;
+        const pred_hi_curr = model.A0 + model.A1 * xx_curr;
+        const pred_lo_curr = model.B0 + model.B1 * xx_curr;
+        const zU_curr = (currentTick.close - pred_hi_curr) / model.sigma_hi;
+        const zL_curr = (pred_lo_curr - currentTick.close) / model.sigma_lo;
+
+        const prevMin = Math.floor((prevTick.time % 3600) / 60);
+        const xx_prev = (Math.floor(prevTick.time / 3600) * 3600 === currentHourKey ? 24 : 23) + prevMin / 60.0;
+        const pred_hi_prev = model.A0 + model.A1 * xx_prev;
+        const pred_lo_prev = model.B0 + model.B1 * xx_prev;
+        const zU_prev = (prevTick.close - pred_hi_prev) / model.sigma_hi;
+        const zL_prev = (pred_lo_prev - prevTick.close) / model.sigma_lo;
+
+        // Node E Detection
+        let sigE = 0;
+        if (zU_prev < 2.0 && zU_curr >= 2.0) sigE = 1;
+        else if (zL_prev < 2.0 && zL_curr >= 2.0) sigE = -1;
+
+        // Node G Detection
+        let sigG = 0;
+        const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
+        if (Math.abs(lr_curr) >= 0.003) {
+            const lookback = 1440;
+            let sum_lr = 0, sum_sq_lr = 0;
+            const vols = [];
+            for (let j = i - lookback + 1; j <= i; j++) {
+                const lr = Math.log(formattedData[j].close / (formattedData[j - 1].close + 1e-9));
+                sum_lr += lr;
+                sum_sq_lr += lr * lr;
+                vols.push(formattedData[j].volume || 0);
+            }
+            const mean_lr = sum_lr / lookback;
+            const var_lr = Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr);
+            const std_lr = Math.sqrt(var_lr);
+            const z_ret = (lr_curr - mean_lr) / std_lr;
+
+            vols.sort((a, b) => a - b);
+            const midIdx = Math.floor(vols.length / 2);
+            const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
+            const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
+            const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
+            const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
+
+            if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0) {
+                if (lr_curr > 0 && zU_curr >= 1.0) sigG = 1;
+                else if (lr_curr < 0 && zL_curr >= 1.0) sigG = -1;
+            }
+        }
+
+        const rawSig = sigE !== 0 ? sigE : sigG;
+        if (rawSig === 0) continue;
+
+        // pos24 filter check
+        let hi24 = -Infinity, lo24 = Infinity;
+        for (let j = i - 1439; j <= i; j++) {
+            if (formattedData[j].high > hi24) hi24 = formattedData[j].high;
+            if (formattedData[j].low < lo24) lo24 = formattedData[j].low;
+        }
+        const range24 = Math.max(1e-9, hi24 - lo24);
+        const pos24 = rawSig === 1
+            ? (currentTick.close - lo24) / range24
+            : (hi24 - currentTick.close) / range24;
+
+        if (pos24 < 0.67) continue;
+
+        markers.push({
+            time: currentTick.time,
+            position: rawSig === 1 ? 'belowBar' : 'aboveBar',
+            color: rawSig === 1 ? '#10b981' : '#f43f5e',
+            shape: rawSig === 1 ? 'arrowUp' : 'arrowDown',
+            text: rawSig === 1 ? `F7 LONG (${sigE !== 0 ? 'E' : 'G'})` : `F7 SHORT (${sigE !== 0 ? 'E' : 'G'})`,
+            size: 2
+        });
+
+        cooldownUntilIdx = i + 720;
+    }
+
+    return markers;
+}

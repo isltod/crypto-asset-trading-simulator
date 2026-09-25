@@ -65,6 +65,14 @@
 
                     <div class="toggle-group">
                         <label class="toggle-switch">
+                            <input type="checkbox" id="toggle-fork7" checked>
+                            <span class="slider"></span>
+                            <span class="label-text">Fork 7 (3-EG)</span>
+                        </label>
+                    </div>
+
+                    <div class="toggle-group">
+                        <label class="toggle-switch">
                             <input type="checkbox" id="toggle-extreme-breakout" checked>
                             <span class="slider"></span>
                             <span class="label-text">Extreme Breakout</span>
@@ -377,6 +385,7 @@
                         <div class="custom-select" style="width: 140px;">
                             <select id="signal-select" style="padding: 3px 20px 3px 6px; font-size: 11px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 6px; width: 100%;">
                                 <option value="none">None</option>
+                                <option value="fork7_candidate3" selected>Fork 7: Cand 3-EG (고수익 챔피언)</option>
                                 <option value="extreme_breakout">Extreme Breakout (S1×A1)</option>
                                 <option value="wave_trend">MTF WaveTrend</option>
                                 <option value="mtf_macd">MTF MACD</option>
@@ -500,7 +509,7 @@
 
     <!-- TradingView Lightweight Charts 라이브러리 추가 -->
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <script type="module" src="js/main.js?v=2"></script>
+    <script type="module" src="js/main.js?v=fork7"></script>
 </body>
 
 </html>
