@@ -1,4 +1,5 @@
 import { state } from './state.js';
+window.state = state;
 import { 
     apiCall, 
     setLogoutHandler, 
