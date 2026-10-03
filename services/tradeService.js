@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { db } = require('../config/db');
-const { latestPrices } = require('./marketService');
+const { latestPrices, klineHistories } = require('./marketService');
 
 let fork7Params = null;
 try {
@@ -12,6 +12,31 @@ try {
 } catch (e) {
     console.error("[Fork 7] Failed to load fork7_candidate3_params.json:", e.message);
 }
+
+let fork9ChampionParams = null;
+try {
+    const p = path.join(__dirname, '../config/fork9_champion_node_g_params.json');
+    if (fs.existsSync(p)) {
+        fork9ChampionParams = JSON.parse(fs.readFileSync(p, 'utf8'));
+    }
+} catch (e) {
+    console.error("[Fork 9 Champion] Failed to load params:", e.message);
+}
+
+let fork9SwingParams = null;
+try {
+    const p = path.join(__dirname, '../config/fork9_swing_node_be_params.json');
+    if (fs.existsSync(p)) {
+        fork9SwingParams = JSON.parse(fs.readFileSync(p, 'utf8'));
+    }
+} catch (e) {
+    console.error("[Fork 9 Swing] Failed to load params:", e.message);
+}
+
+const cand1FlipMap = new Map();
+const cand1EvaluatedCheckpoints = new Set();
+const cand2FlipMap = new Map();
+const cand2EvaluatedCheckpoints = new Set();
 
 const closingUsers = new Set();
 const openingUsers = new Set();
@@ -283,6 +308,105 @@ function checkTPSL(symbol, currentPrice) {
                                 return;
                             }
                         }
+                    }
+                }
+            }
+
+            // Step 5: Candidate 1 (Fork 9 Node G Champion) [10, 60m] SAR Flips
+            if (pos.signal_type === 'fork9_champion_node_g' && pos.entry_type === 'AUTO') {
+                const entryTimeMs = new Date(pos.entry_time).getTime();
+                const nowMs = Date.now();
+                const elapsedMs = !isNaN(entryTimeMs) ? nowMs - entryTimeMs : 0;
+                const elapsedMin = Math.floor(elapsedMs / 60000);
+
+                if (elapsedMin >= 720) {
+                    console.log(`[Fork 9 Champion] 720m Expiry Exit for user ${pos.user_id}`);
+                    cand1FlipMap.delete(pos.user_id);
+                    closePosition(pos.user_id, currentPrice);
+                    return;
+                }
+
+                const isFlipped = cand1FlipMap.get(pos.user_id)?.flipped || false;
+                const evaluatedKey = `${pos.id}_${elapsedMin}`;
+
+                if (!isFlipped && (elapsedMin === 10 || elapsedMin === 60) && !cand1EvaluatedCheckpoints.has(evaluatedKey)) {
+                    cand1EvaluatedCheckpoints.add(evaluatedKey);
+                    const rCut = fork9ChampionParams ? fork9ChampionParams.r_cut_pct : -0.41;
+                    if (priceMovePct <= rCut) {
+                        console.log(`[Fork 9 Champion] Checkpoint ${elapsedMin}m: Return ${priceMovePct.toFixed(2)}% <= ${rCut}%. Executing SAR REVERSAL FLIP for user ${pos.user_id}`);
+                        const oppositeSide = pos.side === 'LONG' ? 'SHORT' : 'LONG';
+                        closePosition(pos.user_id, currentPrice, null, (success) => {
+                            if (success) {
+                                setTimeout(() => {
+                                    cand1FlipMap.set(pos.user_id, { flipped: true, originalSide: pos.side });
+                                    openPositionInternal(pos.user_id, pos.symbol, oppositeSide, currentPrice);
+                                }, 500);
+                            }
+                        });
+                        return;
+                    }
+                }
+            }
+
+            // Step 6: Candidate 2 (Fork 9 Node B+E Swing) [20m] Gap Flip & -15% Disaster Stop
+            if (pos.signal_type === 'fork9_swing_node_be' && pos.entry_type === 'AUTO') {
+                const entryTimeMs = new Date(pos.entry_time).getTime();
+                const nowMs = Date.now();
+                const elapsedMs = !isNaN(entryTimeMs) ? nowMs - entryTimeMs : 0;
+                const elapsedMin = Math.floor(elapsedMs / 60000);
+
+                // 1. -15.0% Disaster Hard Stop
+                const disasterStop = fork9SwingParams ? fork9SwingParams.disaster_stop_pct : -15.0;
+                if (priceMovePct <= disasterStop) {
+                    console.log(`[Fork 9 Swing] DISASTER HARD STOP triggered for user ${pos.user_id}. Return: ${priceMovePct.toFixed(2)}% <= ${disasterStop}%`);
+                    cand2FlipMap.delete(pos.user_id);
+                    closePosition(pos.user_id, currentPrice);
+                    return;
+                }
+
+                // 2. 1440m (24h) Expiry Exit
+                if (elapsedMin >= 1440) {
+                    console.log(`[Fork 9 Swing] 1440m (24h) Expiry Exit for user ${pos.user_id}`);
+                    cand2FlipMap.delete(pos.user_id);
+                    closePosition(pos.user_id, currentPrice);
+                    return;
+                }
+
+                // 3. 20m Checkpoint Evaluation (R <= -0.46% AND dER <= -0.276)
+                const isFlipped = cand2FlipMap.get(pos.user_id)?.flipped || false;
+                const evaluatedKey = `${pos.id}_20`;
+
+                if (!isFlipped && elapsedMin === 20 && !cand2EvaluatedCheckpoints.has(evaluatedKey)) {
+                    cand2EvaluatedCheckpoints.add(evaluatedKey);
+                    const history = (klineHistories && klineHistories[pos.symbol]) ? klineHistories[pos.symbol] : [];
+                    let der = 0;
+                    if (history.length >= 21) {
+                        const lastBars = history.slice(-21);
+                        let path = 0;
+                        for (let i = 1; i < lastBars.length; i++) {
+                            path += Math.abs(lastBars[i].close - lastBars[i - 1].close);
+                        }
+                        const netMove = pos.side === 'LONG' 
+                            ? (lastBars[lastBars.length - 1].close - lastBars[0].close)
+                            : (lastBars[0].close - lastBars[lastBars.length - 1].close);
+                        der = path > 0 ? netMove / path : 0;
+                    }
+
+                    const rCut = fork9SwingParams ? fork9SwingParams.r_cut_pct : -0.46;
+                    const derCut = fork9SwingParams ? fork9SwingParams.der_cut : -0.276;
+
+                    if (priceMovePct <= rCut && der <= derCut) {
+                        console.log(`[Fork 9 Swing] 20m Checkpoint GAP FLIP triggered for user ${pos.user_id}. Return: ${priceMovePct.toFixed(2)}% <= ${rCut}%, dER: ${der.toFixed(3)} <= ${derCut}`);
+                        const oppositeSide = pos.side === 'LONG' ? 'SHORT' : 'LONG';
+                        closePosition(pos.user_id, currentPrice, null, (success) => {
+                            if (success) {
+                                setTimeout(() => {
+                                    cand2FlipMap.set(pos.user_id, { flipped: true, originalSide: pos.side });
+                                    openPositionInternal(pos.user_id, pos.symbol, oppositeSide, currentPrice);
+                                }, 500);
+                            }
+                        });
+                        return;
                     }
                 }
             }

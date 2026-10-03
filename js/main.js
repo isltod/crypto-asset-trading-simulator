@@ -366,6 +366,18 @@ async function updateConfig() {
                 if (state.f7VolThreshSeries) state.f7VolThreshSeries.applyOptions({ visible: true });
                 saveUIConfig();
             }
+        } else if (state.signalType === 'fork9_champion_node_g') {
+            const toggleCand1 = document.getElementById('toggle-cand1');
+            if (toggleCand1 && !toggleCand1.checked) {
+                toggleCand1.checked = true;
+                saveUIConfig();
+            }
+        } else if (state.signalType === 'fork9_swing_node_be') {
+            const toggleCand2 = document.getElementById('toggle-cand2');
+            if (toggleCand2 && !toggleCand2.checked) {
+                toggleCand2.checked = true;
+                saveUIConfig();
+            }
         }
         applyIndicatorMarkers();
         updateBotStateBadge();
@@ -406,7 +418,9 @@ function saveUIConfig() {
         wtAllowRepaint: document.getElementById('wt-allow-repaint')?.checked || false,
         wtIgnoreObos: document.getElementById('wt-ignore-obos')?.checked || false,
         showExtremeBreakout: document.getElementById('toggle-extreme-breakout')?.checked ?? true,
-        showFork7: document.getElementById('toggle-fork7')?.checked ?? true,
+        showCand1: document.getElementById('toggle-cand1')?.checked ?? true,
+        showCand2: document.getElementById('toggle-cand2')?.checked ?? true,
+        showFork7: document.getElementById('toggle-fork7')?.checked ?? false,
         showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
         supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
         supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0'),
@@ -498,6 +512,12 @@ function loadUIConfig() {
                 if (state.f7Pos24LongSeries) state.f7Pos24LongSeries.applyOptions({ visible: config.showFork7 });
                 if (state.f7Pos24ShortSeries) state.f7Pos24ShortSeries.applyOptions({ visible: config.showFork7 });
                 if (state.f7VolThreshSeries) state.f7VolThreshSeries.applyOptions({ visible: config.showFork7 });
+            }
+            if (typeof config.showCand1 === 'boolean' && document.getElementById('toggle-cand1')) {
+                document.getElementById('toggle-cand1').checked = config.showCand1;
+            }
+            if (typeof config.showCand2 === 'boolean' && document.getElementById('toggle-cand2')) {
+                document.getElementById('toggle-cand2').checked = config.showCand2;
             }
             if (typeof config.showSupertrend === 'boolean' && document.getElementById('toggle-supertrend')) {
                 document.getElementById('toggle-supertrend').checked = config.showSupertrend;
@@ -1033,6 +1053,20 @@ async function init() {
         applyIndicatorMarkers();
     }
     toggleFork7?.addEventListener('change', updateFork7Visibility);
+
+    // Candidate 1 (Node G Champion) bindings
+    const toggleCand1 = document.getElementById('toggle-cand1');
+    toggleCand1?.addEventListener('change', () => {
+        saveUIConfig();
+        applyIndicatorMarkers();
+    });
+
+    // Candidate 2 (Node B+E Swing) bindings
+    const toggleCand2 = document.getElementById('toggle-cand2');
+    toggleCand2?.addEventListener('change', () => {
+        saveUIConfig();
+        applyIndicatorMarkers();
+    });
 
     const bindVParamInput = (id, isFloat = false, minVal = 0.1) => {
         const input = document.getElementById(id);

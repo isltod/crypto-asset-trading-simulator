@@ -1,0 +1,8 @@
+{
+  "name": "Candidate 1: Fork 9 Node G Champion (수익률 1위 / 복리 65배)",
+  "node": "Node G",
+  "checkpoints_min": [10, 60],
+  "r_cut_pct": -0.41,
+  "max_hold_min": 720,
+  "action": "SAR_REVERSAL_AND_GUARDRAIL"
+}

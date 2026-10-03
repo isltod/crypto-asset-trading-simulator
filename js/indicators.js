@@ -1141,3 +1141,143 @@ export function calculateFork7Candidate3Markers(formattedData, mtf1h = null) {
 
     return markers;
 }
+
+export function calculateCandidateNodeGMarkers(formattedData, mtf1h = null) {
+    if (!formattedData || formattedData.length < 2) return [];
+    const len = formattedData.length;
+    const { getOLS } = buildFork7Context(formattedData, mtf1h);
+    const markers = [];
+
+    for (let i = 15; i < len; i++) {
+        const currentTick = formattedData[i];
+        const prevTick = formattedData[i - 1];
+        const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
+
+        const model = getOLS(currentHourKey);
+        if (!model) continue;
+
+        const curMin = Math.floor((currentTick.time % 3600) / 60);
+        const xx_curr = 24 + curMin / 60.0;
+        const pred_hi_curr = model.A0 + model.A1 * xx_curr;
+        const pred_lo_curr = model.B0 + model.B1 * xx_curr;
+        const zU_curr = (currentTick.close - pred_hi_curr) / model.sigma_hi;
+        const zL_curr = (pred_lo_curr - currentTick.close) / model.sigma_lo;
+
+        const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
+        const lookback = Math.min(i, 1440);
+        let sum_lr = 0, sum_sq_lr = 0;
+        const vols = [];
+        for (let j = i - lookback + 1; j <= i; j++) {
+            const lr = Math.log(formattedData[j].close / (formattedData[j - 1].close + 1e-9));
+            sum_lr += lr;
+            sum_sq_lr += lr * lr;
+            vols.push(formattedData[j].volume || 0);
+        }
+        const mean_lr = sum_lr / lookback;
+        const var_lr = Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr);
+        const std_lr = Math.sqrt(var_lr);
+        const z_ret = (lr_curr - mean_lr) / std_lr;
+
+        vols.sort((a, b) => a - b);
+        const midIdx = Math.floor(vols.length / 2);
+        const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
+        const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
+        const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
+        const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
+
+        if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0) {
+            if (lr_curr > 0 && zU_curr >= 1.0) {
+                markers.push({
+                    time: currentTick.time,
+                    position: 'belowBar',
+                    color: '#38bdf8', // Sky blue
+                    shape: 'arrowUp',
+                    text: 'C1 L (Node G)',
+                    size: 2
+                });
+            } else if (lr_curr < 0 && zL_curr >= 1.0) {
+                markers.push({
+                    time: currentTick.time,
+                    position: 'aboveBar',
+                    color: '#f43f5e', // Rose red
+                    shape: 'arrowDown',
+                    text: 'C1 S (Node G)',
+                    size: 2
+                });
+            }
+        }
+    }
+    return markers;
+}
+
+export function calculateCandidateNodeBEMarkers(formattedData, mtf1h = null) {
+    if (!formattedData || formattedData.length < 20) return [];
+    const len = formattedData.length;
+    const { getOLS } = buildFork7Context(formattedData, mtf1h);
+    const markers = [];
+
+    for (let i = 15; i < len; i++) {
+        const currentTick = formattedData[i];
+        const prevTick = formattedData[i - 1];
+        const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
+
+        // 1. Node E
+        let sigE = 0;
+        const model = getOLS(currentHourKey);
+        if (model) {
+            const curMin = Math.floor((currentTick.time % 3600) / 60);
+            const xx_curr = 24 + curMin / 60.0;
+            const pred_hi_curr = model.A0 + model.A1 * xx_curr;
+            const pred_lo_curr = model.B0 + model.B1 * xx_curr;
+            const zU_curr = (currentTick.close - pred_hi_curr) / model.sigma_hi;
+            const zL_curr = (pred_lo_curr - currentTick.close) / model.sigma_lo;
+
+            const prevMin = Math.floor((prevTick.time % 3600) / 60);
+            const xx_prev = (Math.floor(prevTick.time / 3600) * 3600 === currentHourKey ? 24 : 23) + prevMin / 60.0;
+            const pred_hi_prev = model.A0 + model.A1 * xx_prev;
+            const pred_lo_prev = model.B0 + model.B1 * xx_prev;
+            const zU_prev = (prevTick.close - pred_hi_prev) / model.sigma_hi;
+            const zL_prev = (pred_lo_prev - prevTick.close) / model.sigma_lo;
+
+            if (zU_prev < 2.0 && zU_curr >= 2.0) sigE = 1;
+            else if (zL_prev < 2.0 && zL_curr >= 2.0) sigE = -1;
+        }
+
+        // 2. Node B (15m Momentum)
+        let sigB = 0;
+        const p15 = formattedData[i - 15];
+        if (p15) {
+            const ret15 = ((currentTick.close - p15.close) / p15.close) * 100.0;
+            let vol15Sum = 0;
+            let pathSum = 0;
+            for (let j = i - 14; j <= i; j++) {
+                vol15Sum += (formattedData[j].volume || 0);
+                pathSum += Math.abs(formattedData[j].close - formattedData[j - 1].close);
+            }
+            const lookback24h = Math.min(i, 1440);
+            let vol24hSum = 0;
+            for (let j = i - lookback24h + 1; j <= i; j++) {
+                vol24hSum += (formattedData[j].volume || 0);
+            }
+            const vol24hMean = vol24hSum / (lookback24h || 1);
+            const vs = vol15Sum / (vol24hMean * 15.0 + 1e-12);
+            const er15 = Math.abs(currentTick.close - p15.close) / (pathSum + 1e-9);
+
+            if (ret15 >= 0.5 && vs >= 2.0 && er15 >= 0.40) sigB = 1;
+            else if (ret15 <= -0.5 && vs >= 2.0 && er15 >= 0.40) sigB = -1;
+        }
+
+        const rawSig = sigE !== 0 ? sigE : sigB;
+        if (rawSig !== 0) {
+            markers.push({
+                time: currentTick.time,
+                position: rawSig === 1 ? 'belowBar' : 'aboveBar',
+                color: rawSig === 1 ? '#a855f7' : '#ec4899', // Purple / Pink
+                shape: rawSig === 1 ? 'arrowUp' : 'arrowDown',
+                text: rawSig === 1 ? `C2 L (B+E)` : `C2 S (B+E)`,
+                size: 2
+            });
+        }
+    }
+    return markers;
+}
