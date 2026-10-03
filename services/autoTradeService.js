@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { db } = require('../config/db');
 const { klineHistories, klineHistoriesMTF } = require('./marketService');
-const { aggregateKlines, calculateWaveTrend, calculateMACDForKlines, calculateStochRSI, calculateVWAPClimax, calculateExtremeBreakout, calculateFork7Candidate3 } = require('./indicatorService');
+const { aggregateKlines, calculateWaveTrend, calculateMACDForKlines, calculateStochRSI, calculateVWAPClimax, calculateExtremeBreakout, calculateFork7Candidate3, calculateCandidateNodeG, calculateCandidateNodeBE } = require('./indicatorService');
 const { openPositionInternal, closePosition } = require('./tradeService');
 
 const fork7CooldownMap = new Map();
@@ -135,7 +135,7 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
     const history = klineHistories[symbol];
     if (!history || history.length < 50) return;
 
-    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd', 'stoch_rsi', 'v_climax', 'extreme_breakout', 'fork7_candidate3')`, (err, accounts) => {
+    db.all(`SELECT a.*, u.username FROM accounts a JOIN users u ON a.user_id = u.id WHERE a.auto_trade_enabled = 1 AND a.signal_type IN ('wave_trend', 'rl_model', 'mtf_macd', 'stoch_rsi', 'v_climax', 'extreme_breakout', 'fork7_candidate3', 'fork9_champion_node_g', 'fork9_swing_node_be')`, (err, accounts) => {
         if (err || !accounts || accounts.length === 0) return;
 
         accounts.forEach(async (account) => {
@@ -144,7 +144,15 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
             const userId = account.user_id;
             let signal = null;
 
-            if (account.signal_type === 'fork7_candidate3') {
+            if (account.signal_type === 'fork9_champion_node_g') {
+                if (!isClosed) return; // 1m bar close only
+                if (symbol.toUpperCase() !== 'BTCUSDT') return;
+                signal = calculateCandidateNodeG(history);
+            } else if (account.signal_type === 'fork9_swing_node_be') {
+                if (!isClosed) return; // 1m bar close only
+                if (symbol.toUpperCase() !== 'BTCUSDT') return;
+                signal = calculateCandidateNodeBE(history);
+            } else if (account.signal_type === 'fork7_candidate3') {
                 if (!isClosed) return; // 1m bar close only
                 if (symbol.toUpperCase() !== 'BTCUSDT') return; // BTCUSDT only
 
@@ -378,7 +386,7 @@ function checkAutoTradeSignals(symbol, currentPrice, isClosed) {
                     if (err) return;
                     
                     if (pos) {
-                        if (account.signal_type === 'extreme_breakout' || account.signal_type === 'fork7_candidate3') {
+                        if (account.signal_type === 'extreme_breakout' || account.signal_type === 'fork7_candidate3' || account.signal_type === 'fork9_champion_node_g' || account.signal_type === 'fork9_swing_node_be') {
                             // Serial rule: skip all signals while in position
                             return;
                         }

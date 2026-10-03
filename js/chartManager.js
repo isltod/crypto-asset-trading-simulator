@@ -8,6 +8,8 @@ import {
     calculateExtremeBreakoutMarkers,
     calculateFork7Candidate3Markers,
     calculateFork7SeriesData,
+    calculateCandidateNodeGMarkers,
+    calculateCandidateNodeBEMarkers,
     calculateVolumeBarData
 } from './indicators.js';
 
@@ -331,6 +333,26 @@ export function applyIndicatorMarkers() {
         const f7Markers = calculateFork7Candidate3Markers(formattedData, mtf1h);
         for (let i = 0; i < f7Markers.length; i++) {
             markers.push(f7Markers[i]);
+        }
+    }
+
+    // 7. Candidate 1 (Fork 9 Node G Champion) Markers
+    const toggleCand1 = document.getElementById('toggle-cand1');
+    if ((toggleCand1 && toggleCand1.checked) || state.signalType === 'fork9_champion_node_g') {
+        const mtf1h = state.mtfKlines ? state.mtfKlines['1h'] : null;
+        const c1Markers = calculateCandidateNodeGMarkers(formattedData, mtf1h);
+        for (let i = 0; i < c1Markers.length; i++) {
+            markers.push(c1Markers[i]);
+        }
+    }
+
+    // 8. Candidate 2 (Fork 9 Node B+E Swing) Markers
+    const toggleCand2 = document.getElementById('toggle-cand2');
+    if ((toggleCand2 && toggleCand2.checked) || state.signalType === 'fork9_swing_node_be') {
+        const mtf1h = state.mtfKlines ? state.mtfKlines['1h'] : null;
+        const c2Markers = calculateCandidateNodeBEMarkers(formattedData, mtf1h);
+        for (let i = 0; i < c2Markers.length; i++) {
+            markers.push(c2Markers[i]);
         }
     }
 
