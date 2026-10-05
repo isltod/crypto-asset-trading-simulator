@@ -513,23 +513,44 @@ function calculateFork7Candidate3(klines) {
     return rawSig === 1 ? 'LONG' : 'SHORT';
 }
 
-function get24hOLSResiduals(klines) {
-    if (!klines || klines.length < 1440) return null;
+module.exports = {
+    calculateEMA,
+    calculateWaveTrend,
+    aggregateKlines,
+    calculateMACDForKlines,
+    calculateRSI,
+    calculateStochRSI,
+    calculateVWAPClimax,
+    calculateExtremeBreakout,
+    calculateFork7Candidate3,
+    calculateFork9DualFirewall,
+    calculateFork9DualFirewallOV34: (klines) => calculateFork9DualFirewall(klines, 0.34, true),
+    calculateFork9DualFirewallOV28: (klines) => calculateFork9DualFirewall(klines, 0.28, true)
+};
+
+/**
+ * Fork 9 Track 2: Dual Firewall (Bar Overlap Ratio + Causal Doom Cell Gating)
+ * @param {Array} klines 1m kline data
+ * @param {number} minOverlap Minimum 24h bar overlap threshold (e.g., 0.34 or 0.28)
+ * @param {boolean} blockDoom Whether to block the Doom Cell (top 33% ER & top 33% Overlap)
+ */
+function calculateFork9DualFirewall(klines, minOverlap = 0.34, blockDoom = true) {
     const len = klines.length;
+    if (len < 1441) return 'HOLD';
+
     const currentTick = klines[len - 1];
     const prevTick = klines[len - 2];
 
+    // 1. Hourly aggregation for 24h OLS bands
     const hourlyBars = [];
     let curHKey = null;
-    let hHigh = -Infinity, hLow = Infinity, hiMin = 0, loMin = 0;
-    const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
+    let hHigh = -Infinity, hLow = Infinity;
+    let hiMin = 0, loMin = 0;
 
     for (let i = 0; i < len; i++) {
         const k = klines[i];
         const hKey = Math.floor(k.time / 3600) * 3600;
-        if (hKey === currentHourKey) continue;
-
-        if (curHKey === null || hKey !== curHKey) {
+        if (hKey !== curHKey) {
             if (curHKey !== null) {
                 hourlyBars.push({ hKey: curHKey, high: hHigh, low: hLow, hiMin, loMin });
             }
@@ -540,21 +561,15 @@ function get24hOLSResiduals(klines) {
             loMin = hiMin;
         } else {
             const m = Math.floor((k.time % 3600) / 60);
-            if (k.high > hHigh) {
-                hHigh = k.high;
-                hiMin = m;
-            }
-            if (k.low < hLow) {
-                hLow = k.low;
-                loMin = m;
-            }
+            if (k.high > hHigh) { hHigh = k.high; hiMin = m; }
+            if (k.low < hLow) { hLow = k.low; loMin = m; }
         }
     }
     if (curHKey !== null) {
         hourlyBars.push({ hKey: curHKey, high: hHigh, low: hLow, hiMin, loMin });
     }
 
-    if (hourlyBars.length < 24) return null;
+    if (hourlyBars.length < 24) return 'HOLD';
     const last24Hours = hourlyBars.slice(-24);
 
     let sumX_hi = 0, sumY_hi = 0, sumX_lo = 0, sumY_lo = 0;
@@ -587,45 +602,20 @@ function get24hOLSResiduals(klines) {
 
     let resSum_hi = 0, resSum_lo = 0;
     for (let i = 0; i < 24; i++) {
-        const pred_hi = A0 + A1 * ptsHi[i].x;
-        const pred_lo = B0 + B1 * ptsLo[i].x;
-        resSum_hi += Math.pow(ptsHi[i].y - pred_hi, 2);
-        resSum_lo += Math.pow(ptsLo[i].y - pred_lo, 2);
+        resSum_hi += Math.pow(ptsHi[i].y - (A0 + A1 * ptsHi[i].x), 2);
+        resSum_lo += Math.pow(ptsLo[i].y - (B0 + B1 * ptsLo[i].x), 2);
     }
     const sigma_hi = Math.sqrt(resSum_hi / 22) + 1e-9;
     const sigma_lo = Math.sqrt(resSum_lo / 22) + 1e-9;
 
     const curMin = Math.floor((currentTick.time % 3600) / 60);
     const xx_curr = 24 + curMin / 60.0;
-    const pred_hi_curr = A0 + A1 * xx_curr;
-    const pred_lo_curr = B0 + B1 * xx_curr;
-    const zU_curr = (currentTick.close - pred_hi_curr) / sigma_hi;
-    const zL_curr = (pred_lo_curr - currentTick.close) / sigma_lo;
+    const zU_curr = (currentTick.close - (A0 + A1 * xx_curr)) / sigma_hi;
+    const zL_curr = ((B0 + B1 * xx_curr) - currentTick.close) / sigma_lo;
 
-    const prevMin = Math.floor((prevTick.time % 3600) / 60);
-    const xx_prev = (Math.floor(prevTick.time / 3600) * 3600 === currentHourKey ? 24 : 23) + prevMin / 60.0;
-    const pred_hi_prev = A0 + A1 * xx_prev;
-    const pred_lo_prev = B0 + B1 * xx_prev;
-    const zU_prev = (prevTick.close - pred_hi_prev) / sigma_hi;
-    const zL_prev = (pred_lo_prev - prevTick.close) / sigma_lo;
-
-    return { zU_curr, zL_curr, zU_prev, zL_prev, sigma_hi, sigma_lo };
-}
-
-// -------------------------------------------------------------
-// [후보 1] Fork 9 수익률 챔피언: Node G 단독 진입 (5.5년 순익 1위)
-// -------------------------------------------------------------
-function calculateCandidateNodeG(klines) {
-    if (!klines || klines.length < 1440) return 'HOLD';
-    const len = klines.length;
-    const currentTick = klines[len - 1];
-    const prevTick = klines[len - 2];
-
-    const ols = get24hOLSResiduals(klines);
-    if (!ols) return 'HOLD';
-
+    // 2. Node G Trigger Check (|z_ret| >= 4.0, z_vol >= 5.0, z_band >= 1.0)
     const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
-    const lookback = Math.min(len - 1, 1440);
+    const lookback = 1440;
     let sum_lr = 0, sum_sq_lr = 0;
     const vols = [];
     for (let j = len - lookback; j < len; j++) {
@@ -635,8 +625,7 @@ function calculateCandidateNodeG(klines) {
         vols.push(klines[j].volume || 0);
     }
     const mean_lr = sum_lr / lookback;
-    const var_lr = Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr);
-    const std_lr = Math.sqrt(var_lr);
+    const std_lr = Math.sqrt(Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr));
     const z_ret = (lr_curr - mean_lr) / std_lr;
 
     vols.sort((a, b) => a - b);
@@ -646,81 +635,73 @@ function calculateCandidateNodeG(klines) {
     const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
     const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
 
+    let rawSig = 0;
     if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0) {
-        if (lr_curr > 0 && ols.zU_curr >= 1.0) {
-            console.log(`[Candidate 1: Node G] Signal APPROVED: LONG. z_ret=${z_ret.toFixed(2)}, z_vol=${z_vol.toFixed(2)}, zU=${ols.zU_curr.toFixed(2)}`);
-            return 'LONG';
-        } else if (lr_curr < 0 && ols.zL_curr >= 1.0) {
-            console.log(`[Candidate 1: Node G] Signal APPROVED: SHORT. z_ret=${z_ret.toFixed(2)}, z_vol=${z_vol.toFixed(2)}, zL=${ols.zL_curr.toFixed(2)}`);
-            return 'SHORT';
+        if (lr_curr > 0 && zU_curr >= 1.0) rawSig = 1;
+        else if (lr_curr < 0 && zL_curr >= 1.0) rawSig = -1;
+    }
+
+    if (rawSig === 0) return 'HOLD';
+
+    // 3. Firewall 1: 24h Bar Overlap Ratio
+    let sumOv = 0;
+    for (let j = len - lookback; j < len; j++) {
+        const p = klines[j - 1];
+        const c = klines[j];
+        const inter = Math.max(0, Math.min(c.high, p.high) - Math.max(c.low, p.low));
+        const union = Math.max(1e-6, Math.max(c.high, p.high) - Math.min(c.low, p.low));
+        sumOv += (inter / union);
+    }
+    const currOverlap = sumOv / lookback;
+
+    if (minOverlap !== null && currOverlap < minOverlap) {
+        console.log(`[Fork 9 Dual Firewall] ${rawSig === 1 ? 'LONG' : 'SHORT'} Node G rejected: Overlap24h ${currOverlap.toFixed(4)} < ${minOverlap}`);
+        return 'HOLD';
+    }
+
+    // 4. Firewall 2: Causal Doom Cell Gating (ER Top 33% AND Overlap Top 33%)
+    if (blockDoom) {
+        let path = 0;
+        for (let j = len - lookback; j < len; j++) {
+            path += Math.abs(klines[j].close - klines[j - 1].close);
+        }
+        const disp = Math.abs(currentTick.close - klines[len - lookback].close);
+        const currER = path > 0 ? disp / path : 0.0;
+
+        // Sample historical 24h ER and Overlap over available bars (up to 30 days)
+        const histWindow = Math.min(len - 1440, 30 * 1440);
+        if (histWindow >= 1440) {
+            const erHist = [];
+            const ovHist = [];
+            const step = 15;
+            for (let idx = len - histWindow; idx < len; idx += step) {
+                let p_sub = 0;
+                let ov_sub = 0;
+                for (let k = idx - 1440; k < idx; k++) {
+                    p_sub += Math.abs(klines[k].close - klines[k - 1].close);
+                    const inter_s = Math.max(0, Math.min(klines[k].high, klines[k - 1].high) - Math.max(klines[k].low, klines[k - 1].low));
+                    const union_s = Math.max(1e-6, Math.max(klines[k].high, klines[k - 1].high) - Math.min(klines[k].low, klines[k - 1].low));
+                    ov_sub += (inter_s / union_s);
+                }
+                const d_sub = Math.abs(klines[idx].close - klines[idx - 1440].close);
+                erHist.push(p_sub > 0 ? d_sub / p_sub : 0.0);
+                ovHist.push(ov_sub / 1440);
+            }
+
+            erHist.sort((a, b) => a - b);
+            ovHist.sort((a, b) => a - b);
+            const qIdx = Math.floor(erHist.length * 0.6667);
+            const qER = erHist[qIdx] || 0.05;
+            const qOV = ovHist[qIdx] || 0.35;
+
+            if (currER > qER && currOverlap > qOV) {
+                console.log(`[Fork 9 Dual Firewall] ${rawSig === 1 ? 'LONG' : 'SHORT'} Node G rejected by DOOM CELL: ER=${currER.toFixed(4)} > ${qER.toFixed(4)} AND Overlap=${currOverlap.toFixed(4)} > ${qOV.toFixed(4)}`);
+                return 'HOLD';
+            }
         }
     }
-    return 'HOLD';
+
+    const dirStr = rawSig === 1 ? 'LONG' : 'SHORT';
+    console.log(`[Fork 9 Dual Firewall (minOV=${minOverlap})] Signal APPROVED: ${dirStr}. Overlap24h=${currOverlap.toFixed(4)}, z_ret=${z_ret.toFixed(2)}, z_vol=${z_vol.toFixed(2)}`);
+    return dirStr;
 }
-
-// -------------------------------------------------------------
-// [후보 2] Fork 9 무방향 스윙 챔피언: Node B+E 결합 (승률 59%)
-// -------------------------------------------------------------
-function calculateCandidateNodeBE(klines) {
-    if (!klines || klines.length < 1440) return 'HOLD';
-    const len = klines.length;
-    const currentTick = klines[len - 1];
-
-    // 1. Node E (24h OLS 2.0 sigma transition)
-    const ols = get24hOLSResiduals(klines);
-    let sigE = 0;
-    if (ols) {
-        if (ols.zU_prev < 2.0 && ols.zU_curr >= 2.0) sigE = 1;
-        else if (ols.zL_prev < 2.0 && ols.zL_curr >= 2.0) sigE = -1;
-    }
-
-    // 2. Node B (15m Momentum Burst: ret15 >= 0.5%, vs >= 2.0, er15 >= 0.40)
-    let sigB = 0;
-    const p15 = klines[len - 1 - 15];
-    if (p15) {
-        const ret15 = ((currentTick.close - p15.close) / p15.close) * 100.0;
-        let vol15Sum = 0;
-        let pathSum = 0;
-        for (let i = len - 15; i < len; i++) {
-            vol15Sum += (klines[i].volume || 0);
-            pathSum += Math.abs(klines[i].close - klines[i - 1].close);
-        }
-        let vol24hSum = 0;
-        for (let i = len - 1440; i < len; i++) {
-            vol24hSum += (klines[i].volume || 0);
-        }
-        const vol24hMean = vol24hSum / 1440.0;
-        const vs = vol15Sum / (vol24hMean * 15.0 + 1e-12);
-        const er15 = Math.abs(currentTick.close - p15.close) / (pathSum + 1e-9);
-
-        if (ret15 >= 0.5 && vs >= 2.0 && er15 >= 0.40) {
-            sigB = 1;
-        } else if (ret15 <= -0.5 && vs >= 2.0 && er15 >= 0.40) {
-            sigB = -1;
-        }
-    }
-
-    const rawSig = sigE !== 0 ? sigE : sigB;
-    if (rawSig === 1) {
-        console.log(`[Candidate 2: Node B+E] Signal APPROVED: LONG via Node ${sigE !== 0 ? 'E' : 'B'}`);
-        return 'LONG';
-    } else if (rawSig === -1) {
-        console.log(`[Candidate 2: Node B+E] Signal APPROVED: SHORT via Node ${sigE !== 0 ? 'E' : 'B'}`);
-        return 'SHORT';
-    }
-    return 'HOLD';
-}
-
-module.exports = {
-    calculateEMA,
-    calculateWaveTrend,
-    aggregateKlines,
-    calculateMACDForKlines,
-    calculateRSI,
-    calculateStochRSI,
-    calculateVWAPClimax,
-    calculateExtremeBreakout,
-    calculateFork7Candidate3,
-    calculateCandidateNodeG,
-    calculateCandidateNodeBE
-};

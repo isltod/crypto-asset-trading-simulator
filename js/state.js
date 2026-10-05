@@ -112,5 +112,14 @@ export const state = {
     f7Pos24ShortSeries: null,
     f7VolThreshSeries: null,
 
+    // Fork 9 (Dual Firewall) Lines & Series
+    overlapChart: null,
+    overlapLineSeries: null,
+    erLineSeries: null,
+    doomHistSeries: null,
+    overlapPriceLines: [],
+    erPriceLines: [],
+    lastOverlapData: null,
+
     activeChart: null
 };

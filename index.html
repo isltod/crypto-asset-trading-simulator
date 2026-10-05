@@ -65,23 +65,7 @@
 
                     <div class="toggle-group">
                         <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-cand1" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">후보 1: Node G (수익 1위)</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-cand2" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">후보 2: Node B+E (승률 59%)</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-fork7">
+                            <input type="checkbox" id="toggle-fork7" checked>
                             <span class="slider"></span>
                             <span class="label-text">Fork 7 (3-EG)</span>
                         </label>
@@ -132,6 +116,14 @@
                             <input type="checkbox" id="toggle-vol" checked>
                             <span class="slider"></span>
                             <span class="label-text">Volume (MTF)</span>
+                        </label>
+                    </div>
+
+                    <div class="toggle-group">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="toggle-overlap" checked>
+                            <span class="slider"></span>
+                            <span class="label-text" style="color:#00e5ff;">F9 Dual Firewall</span>
                         </label>
                     </div>
                 </div>
@@ -341,6 +333,8 @@
                 <div id="stoch-chart-container" class="stoch-chart-container"></div>
                 <div id="chart-resizer-vol" class="chart-resizer"></div>
                 <div id="vol-chart-container" class="vol-chart-container"></div>
+                <div id="chart-resizer-overlap" class="chart-resizer"></div>
+                <div id="overlap-chart-container" class="overlap-chart-container"></div>
 
                 <!-- Mobile Trade Toggle FAB -->
                 <button id="mobile-trade-btn" class="mobile-trade-fab">
@@ -401,8 +395,8 @@
                         <div class="custom-select" style="width: 140px;">
                             <select id="signal-select" style="padding: 3px 20px 3px 6px; font-size: 11px; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 6px; width: 100%;">
                                 <option value="none">None</option>
-                                <option value="fork9_champion_node_g" selected>후보 1: Node G (수익 1위 / 복리 65배)</option>
-                                <option value="fork9_swing_node_be">후보 2: Node B+E (승률 59% 스윙)</option>
+                                <option value="fork9_dual_firewall_ov34" selected>Fork 9: Dual Firewall (OV<0.34)</option>
+                                <option value="fork9_dual_firewall_ov28">Fork 9: Dual Firewall (OV<0.28)</option>
                                 <option value="fork7_candidate3">Fork 7: Cand 3-EG (고수익 챔피언)</option>
                                 <option value="extreme_breakout">Extreme Breakout (S1×A1)</option>
                                 <option value="wave_trend">MTF WaveTrend</option>
@@ -527,7 +521,7 @@
 
     <!-- TradingView Lightweight Charts 라이브러리 추가 -->
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
-    <script type="module" src="js/main.js?v=cand_v1"></script>
+    <script type="module" src="js/main.js?v=f9_dual_scale"></script>
 </body>
 
 </html>

@@ -8,10 +8,61 @@ import {
     calculateExtremeBreakoutMarkers,
     calculateFork7Candidate3Markers,
     calculateFork7SeriesData,
-    calculateCandidateNodeGMarkers,
-    calculateCandidateNodeBEMarkers,
-    calculateVolumeBarData
+    calculateVolumeBarData,
+    calculateFork9OverlapData,
+    calculateFork9DualFirewallMarkers
 } from './indicators.js';
+
+export function updateOverlapPriceLines() {
+    state.overlapPriceLines.forEach(line => {
+        try {
+            state.overlapLineSeries.removePriceLine(line);
+        } catch (e) { }
+    });
+    state.overlapPriceLines = [];
+
+    if (state.erPriceLines) {
+        state.erPriceLines.forEach(line => {
+            try {
+                state.erLineSeries.removePriceLine(line);
+            } catch (e) { }
+        });
+        state.erPriceLines = [];
+    }
+
+    if (state.overlapLineSeries) {
+        const line34 = state.overlapLineSeries.createPriceLine({
+            price: 0.34,
+            color: '#facc15',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'OV 0.34',
+        });
+        const line28 = state.overlapLineSeries.createPriceLine({
+            price: 0.28,
+            color: '#fb923c',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'OV 0.28',
+        });
+        state.overlapPriceLines.push(line34, line28);
+    }
+
+    if (state.erLineSeries) {
+        const lineDoomER = state.erLineSeries.createPriceLine({
+            price: 0.034,
+            color: '#ec4899',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'ER 0.034 (Doom)',
+        });
+        if (!state.erPriceLines) state.erPriceLines = [];
+        state.erPriceLines.push(lineDoomER);
+    }
+}
 
 export function updateWTPriceLines() {
     state.wtPriceLines.forEach(line => {
@@ -336,23 +387,17 @@ export function applyIndicatorMarkers() {
         }
     }
 
-    // 7. Candidate 1 (Fork 9 Node G Champion) Markers
-    const toggleCand1 = document.getElementById('toggle-cand1');
-    if ((toggleCand1 && toggleCand1.checked) || state.signalType === 'fork9_champion_node_g') {
+    // 7. Fork 9 Dual Firewall Markers
+    const toggleOverlap = document.getElementById('toggle-overlap');
+    const isF9Active = (toggleOverlap && toggleOverlap.checked) || 
+                       state.signalType === 'fork9_dual_firewall_ov34' || 
+                       state.signalType === 'fork9_dual_firewall_ov28';
+    if (isF9Active) {
         const mtf1h = state.mtfKlines ? state.mtfKlines['1h'] : null;
-        const c1Markers = calculateCandidateNodeGMarkers(formattedData, mtf1h);
-        for (let i = 0; i < c1Markers.length; i++) {
-            markers.push(c1Markers[i]);
-        }
-    }
-
-    // 8. Candidate 2 (Fork 9 Node B+E Swing) Markers
-    const toggleCand2 = document.getElementById('toggle-cand2');
-    if ((toggleCand2 && toggleCand2.checked) || state.signalType === 'fork9_swing_node_be') {
-        const mtf1h = state.mtfKlines ? state.mtfKlines['1h'] : null;
-        const c2Markers = calculateCandidateNodeBEMarkers(formattedData, mtf1h);
-        for (let i = 0; i < c2Markers.length; i++) {
-            markers.push(c2Markers[i]);
+        const minOverlap = state.signalType === 'fork9_dual_firewall_ov28' ? 0.28 : 0.34;
+        const f9Markers = calculateFork9DualFirewallMarkers(formattedData, mtf1h, minOverlap, true);
+        for (let i = 0; i < f9Markers.length; i++) {
+            markers.push(f9Markers[i]);
         }
     }
 
@@ -502,6 +547,13 @@ export function updateChartSeries() {
     if (state.f7Pos24ShortSeries) state.f7Pos24ShortSeries.setData(f7Lines.pos24ShortData);
     if (state.f7VolThreshSeries && f7Lines.volThreshData) state.f7VolThreshSeries.setData(f7Lines.volThreshData);
 
+    // Fork 9 Overlap Chart Data
+    const f9Data = calculateFork9OverlapData(formattedData);
+    state.lastOverlapData = f9Data;
+    if (state.overlapLineSeries && f9Data.overlapData) state.overlapLineSeries.setData(f9Data.overlapData);
+    if (state.erLineSeries && f9Data.erData) state.erLineSeries.setData(f9Data.erData);
+    if (state.doomHistSeries && f9Data.doomHistData) state.doomHistSeries.setData(f9Data.doomHistData);
+
     applyIndicatorMarkers();
     renderSupertrend();
 }
@@ -589,11 +641,21 @@ export function updateIndicatorsLive() {
         }
     }
 
+    if (data.length > 0 && state.overlapLineSeries) {
+        const f9Data = calculateFork9OverlapData(data);
+        state.lastOverlapData = f9Data;
+        if (f9Data.overlapData && f9Data.overlapData.length > 0) {
+            state.overlapLineSeries.update(f9Data.overlapData[f9Data.overlapData.length - 1]);
+            state.erLineSeries.update(f9Data.erData[f9Data.erData.length - 1]);
+            state.doomHistSeries.update(f9Data.doomHistData[f9Data.doomHistData.length - 1]);
+        }
+    }
+
     applyIndicatorMarkers();
     renderSupertrend();
 }
 
-export function initCharts(chartContainer, wtChartContainer, macdChartContainer, stochChartContainer, volChartContainer) {
+export function initCharts(chartContainer, wtChartContainer, macdChartContainer, stochChartContainer, volChartContainer, overlapChartContainer) {
     state.chart = LightweightCharts.createChart(chartContainer, {
         width: chartContainer.clientWidth || 600,
         height: chartContainer.clientHeight || 400,
@@ -861,9 +923,82 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
         });
     }
 
+    // Initialize Fork 9 Overlap Sub Chart
+    if (overlapChartContainer) {
+        state.overlapChart = LightweightCharts.createChart(overlapChartContainer, {
+            width: overlapChartContainer.clientWidth || 600,
+            height: overlapChartContainer.clientHeight || 130,
+            layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#94a3b8' },
+            grid: {
+                vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            leftPriceScale: {
+                visible: true,
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                minimumWidth: 70,
+                autoScale: true,
+            },
+            rightPriceScale: {
+                visible: true,
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                minimumWidth: 80,
+                autoScale: true,
+            },
+            timeScale: { visible: false },
+        });
+
+        state.overlapChart.priceScale('left').applyOptions({
+            autoScale: true,
+            scaleMargins: { top: 0.15, bottom: 0.15 },
+        });
+
+        state.overlapChart.priceScale('right').applyOptions({
+            autoScale: true,
+            scaleMargins: { top: 0.15, bottom: 0.15 },
+        });
+
+        state.overlapChart.priceScale('').applyOptions({
+            scaleMargins: { top: 0.75, bottom: 0 },
+        });
+
+        state.overlapLineSeries = state.overlapChart.addLineSeries({
+            color: '#00e5ff',
+            lineWidth: 2,
+            title: 'Overlap 24h (Right)',
+            priceScaleId: 'right',
+            priceFormat: {
+                type: 'custom',
+                formatter: (price) => price.toFixed(3),
+            },
+            crosshairMarkerVisible: true
+        });
+
+        state.erLineSeries = state.overlapChart.addLineSeries({
+            color: '#c084fc',
+            lineWidth: 2,
+            title: 'ER 24h (Left)',
+            priceScaleId: 'left',
+            priceFormat: {
+                type: 'custom',
+                formatter: (price) => price.toFixed(4),
+            },
+            crosshairMarkerVisible: true
+        });
+
+        state.doomHistSeries = state.overlapChart.addHistogramSeries({
+            priceFormat: { type: 'custom', formatter: (val) => val > 0 ? 'DOOM' : '' },
+            priceScaleId: ''
+        });
+
+        updateOverlapPriceLines();
+    }
+
     // Sync time scales
     const allCharts = [state.chart, state.wtChart, state.macdChart, state.stochRsiChart];
     if (state.volChart) allCharts.push(state.volChart);
+    if (state.overlapChart) allCharts.push(state.overlapChart);
 
     allCharts.forEach(source => {
         source.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
@@ -881,12 +1016,14 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
     macdChartContainer.addEventListener('mouseenter', () => state.activeChart = state.macdChart);
     stochChartContainer.addEventListener('mouseenter', () => state.activeChart = state.stochRsiChart);
     if (volChartContainer) volChartContainer.addEventListener('mouseenter', () => state.activeChart = state.volChart);
+    if (overlapChartContainer) overlapChartContainer.addEventListener('mouseenter', () => state.activeChart = state.overlapChart);
 
     chartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.chart) state.activeChart = null; });
     wtChartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.wtChart) state.activeChart = null; });
     macdChartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.macdChart) state.activeChart = null; });
     stochChartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.stochRsiChart) state.activeChart = null; });
     if (volChartContainer) volChartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.volChart) state.activeChart = null; });
+    if (overlapChartContainer) overlapChartContainer.addEventListener('mouseleave', () => { if (state.activeChart === state.overlapChart) state.activeChart = null; });
 
     function syncCrosshair(sourceChart, param) {
         if (state.activeChart && sourceChart !== state.activeChart) return;
@@ -898,6 +1035,7 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
             if (sourceChart !== state.macdChart) state.macdChart.clearCrosshairPosition();
             if (sourceChart !== state.stochRsiChart) state.stochRsiChart.clearCrosshairPosition();
             if (state.volChart && sourceChart !== state.volChart) state.volChart.clearCrosshairPosition();
+            if (state.overlapChart && sourceChart !== state.overlapChart) state.overlapChart.clearCrosshairPosition();
             return;
         }
 
@@ -941,6 +1079,14 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
             }
             state.volChart.setCrosshairPosition(price, time, state.volMaSeries);
         }
+        if (state.overlapChart && sourceChart !== state.overlapChart) {
+            let price = 0;
+            if (state.lastOverlapData && state.lastOverlapData.overlapData) {
+                const match = state.lastOverlapData.overlapData.find(d => d.time === time);
+                if (match && match.value !== undefined) price = match.value;
+            }
+            state.overlapChart.setCrosshairPosition(price, time, state.overlapLineSeries);
+        }
     }
 
     state.chart.subscribeCrosshairMove(param => syncCrosshair(state.chart, param));
@@ -948,4 +1094,5 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
     state.macdChart.subscribeCrosshairMove(param => syncCrosshair(state.macdChart, param));
     state.stochRsiChart.subscribeCrosshairMove(param => syncCrosshair(state.stochRsiChart, param));
     if (state.volChart) state.volChart.subscribeCrosshairMove(param => syncCrosshair(state.volChart, param));
+    if (state.overlapChart) state.overlapChart.subscribeCrosshairMove(param => syncCrosshair(state.overlapChart, param));
 }
