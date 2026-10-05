@@ -118,6 +118,7 @@ export const state = {
     erLineSeries: null,
     doomHistSeries: null,
     overlapPriceLines: [],
+    erPriceLines: [],
     lastOverlapData: null,
 
     activeChart: null

@@ -21,26 +21,47 @@ export function updateOverlapPriceLines() {
     });
     state.overlapPriceLines = [];
 
-    if (!state.overlapLineSeries) return;
+    if (state.erPriceLines) {
+        state.erPriceLines.forEach(line => {
+            try {
+                state.erLineSeries.removePriceLine(line);
+            } catch (e) { }
+        });
+        state.erPriceLines = [];
+    }
 
-    const line34 = state.overlapLineSeries.createPriceLine({
-        price: 0.34,
-        color: '#facc15',
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'OV Thresh 0.34',
-    });
-    const line28 = state.overlapLineSeries.createPriceLine({
-        price: 0.28,
-        color: '#fb923c',
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'OV Thresh 0.28',
-    });
+    if (state.overlapLineSeries) {
+        const line34 = state.overlapLineSeries.createPriceLine({
+            price: 0.34,
+            color: '#facc15',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'OV 0.34',
+        });
+        const line28 = state.overlapLineSeries.createPriceLine({
+            price: 0.28,
+            color: '#fb923c',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'OV 0.28',
+        });
+        state.overlapPriceLines.push(line34, line28);
+    }
 
-    state.overlapPriceLines.push(line34, line28);
+    if (state.erLineSeries) {
+        const lineDoomER = state.erLineSeries.createPriceLine({
+            price: 0.034,
+            color: '#ec4899',
+            lineWidth: 1,
+            lineStyle: LightweightCharts.LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'ER 0.034 (Doom)',
+        });
+        if (!state.erPriceLines) state.erPriceLines = [];
+        state.erPriceLines.push(lineDoomER);
+    }
 }
 
 export function updateWTPriceLines() {
@@ -913,33 +934,62 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
                 horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
             },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            leftPriceScale: {
+                visible: true,
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                minimumWidth: 70,
+                autoScale: true,
+            },
             rightPriceScale: {
+                visible: true,
                 borderColor: 'rgba(255, 255, 255, 0.1)',
                 minimumWidth: 80,
+                autoScale: true,
             },
             timeScale: { visible: false },
         });
 
+        state.overlapChart.priceScale('left').applyOptions({
+            autoScale: true,
+            scaleMargins: { top: 0.15, bottom: 0.15 },
+        });
+
         state.overlapChart.priceScale('right').applyOptions({
             autoScale: true,
-            scaleMargins: { top: 0.1, bottom: 0.1 },
+            scaleMargins: { top: 0.15, bottom: 0.15 },
+        });
+
+        state.overlapChart.priceScale('').applyOptions({
+            scaleMargins: { top: 0.75, bottom: 0 },
         });
 
         state.overlapLineSeries = state.overlapChart.addLineSeries({
             color: '#00e5ff',
             lineWidth: 2,
-            title: 'Overlap 24h',
+            title: 'Overlap 24h (Right)',
+            priceScaleId: 'right',
+            priceFormat: {
+                type: 'custom',
+                formatter: (price) => price.toFixed(3),
+            },
             crosshairMarkerVisible: true
         });
+
         state.erLineSeries = state.overlapChart.addLineSeries({
             color: '#c084fc',
-            lineWidth: 1.5,
-            title: 'ER 24h',
+            lineWidth: 2,
+            title: 'ER 24h (Left)',
+            priceScaleId: 'left',
+            priceFormat: {
+                type: 'custom',
+                formatter: (price) => price.toFixed(4),
+            },
             crosshairMarkerVisible: true
         });
+
         state.doomHistSeries = state.overlapChart.addHistogramSeries({
             priceFormat: { type: 'custom', formatter: (val) => val > 0 ? 'DOOM' : '' },
-            priceScaleId: 'right'
+            priceScaleId: ''
         });
 
         updateOverlapPriceLines();
