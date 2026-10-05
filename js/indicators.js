@@ -1141,3 +1141,260 @@ export function calculateFork7Candidate3Markers(formattedData, mtf1h = null) {
 
     return markers;
 }
+
+/**
+ * Calculate 24h Bar Overlap, 24h Kaufman ER, and Doom Cell state for Fork 9
+ */
+export function calculateFork9OverlapData(formattedData) {
+    const len = formattedData.length;
+    const overlapData = [];
+    const erData = [];
+    const doomHistData = [];
+
+    if (len < 2) {
+        return { overlapData, erData, doomHistData };
+    }
+
+    // 1. Compute per-bar overlap
+    const perBarOverlap = new Array(len).fill(0);
+    for (let i = 1; i < len; i++) {
+        const prev = formattedData[i - 1];
+        const curr = formattedData[i];
+        const inter = Math.max(0, Math.min(curr.high, prev.high) - Math.max(curr.low, prev.low));
+        const union = Math.max(1e-6, Math.max(curr.high, prev.high) - Math.min(curr.low, prev.low));
+        perBarOverlap[i] = inter / union;
+    }
+
+    // 2. Compute rolling 1440 Overlap & 1440 Kaufman ER
+    let sumOv = 0;
+    let sumPath = 0;
+    const ovArr = new Array(len).fill(0);
+    const erArr = new Array(len).fill(0);
+
+    for (let i = 0; i < len; i++) {
+        sumOv += perBarOverlap[i];
+        if (i > 0) {
+            sumPath += Math.abs(formattedData[i].close - formattedData[i - 1].close);
+        }
+
+        if (i >= 1440) {
+            sumOv -= perBarOverlap[i - 1440];
+            sumPath -= Math.abs(formattedData[i - 1440].close - formattedData[i - 1441].close);
+            const disp = Math.abs(formattedData[i].close - formattedData[i - 1440].close);
+            ovArr[i] = sumOv / 1440;
+            erArr[i] = sumPath > 0 ? disp / sumPath : 0;
+        } else {
+            ovArr[i] = sumOv / (i + 1);
+            const disp = Math.abs(formattedData[i].close - formattedData[0].close);
+            erArr[i] = sumPath > 0 ? disp / sumPath : 0;
+        }
+    }
+
+    // 3. Compute 30d rolling quantiles for Doom Cell (top 33% ER & top 33% Overlap)
+    for (let i = 0; i < len; i++) {
+        const t = formattedData[i].time;
+        const ovVal = ovArr[i];
+        const erVal = erArr[i];
+
+        overlapData.push({ time: t, value: ovVal });
+        erData.push({ time: t, value: erVal });
+
+        // Calculate quantile over available history
+        const lookback = Math.min(i, 30 * 1440);
+        let isDoom = false;
+        if (lookback >= 1440) {
+            const histER = [];
+            const histOV = [];
+            const step = Math.max(1, Math.floor(lookback / 200));
+            for (let j = i - lookback; j < i; j += step) {
+                histER.push(erArr[j]);
+                histOV.push(ovArr[j]);
+            }
+            histER.sort((a, b) => a - b);
+            histOV.sort((a, b) => a - b);
+            const qIdx = Math.floor(histER.length * 0.6667);
+            const qER = histER[qIdx];
+            const qOV = histOV[qIdx];
+
+            if (erVal > qER && ovVal > qOV) {
+                isDoom = true;
+            }
+        }
+
+        doomHistData.push({
+            time: t,
+            value: isDoom ? 0.5 : 0,
+            color: isDoom ? 'rgba(239, 68, 68, 0.4)' : 'transparent'
+        });
+    }
+
+    return { overlapData, erData, doomHistData };
+}
+
+/**
+ * Calculate Fork 9 Dual Firewall Markers
+ * @param {Array} formattedData 1m kline data
+ * @param {Array} mtf1h 1h klines for 24h OLS regression
+ * @param {number} minOverlap 0.34 or 0.28
+ * @param {boolean} blockDoom whether to apply doom cell filter
+ */
+export function calculateFork9DualFirewallMarkers(formattedData, mtf1h = null, minOverlap = 0.34, blockDoom = true) {
+    const len = formattedData.length;
+    const markers = [];
+    if (len < 100) return markers;
+
+    const { overlapData, erData, doomHistData } = calculateFork9OverlapData(formattedData);
+
+    // Build hourly map for OLS bands
+    const hourlyMap = new Map();
+    if (mtf1h && mtf1h.length > 0) {
+        for (let i = 0; i < mtf1h.length; i++) {
+            const hb = mtf1h[i];
+            const hKey = Math.floor(hb.time / 3600) * 3600;
+            hourlyMap.set(hKey, { high: hb.high, low: hb.low, hiMin: 0, loMin: 0 });
+        }
+    }
+    for (let i = 0; i < len; i++) {
+        const k = formattedData[i];
+        const hKey = Math.floor(k.time / 3600) * 3600;
+        const m = Math.floor((k.time % 3600) / 60);
+        let hb = hourlyMap.get(hKey);
+        if (!hb) {
+            hb = { high: k.high, low: k.low, hiMin: m, loMin: m };
+            hourlyMap.set(hKey, hb);
+        } else {
+            if (k.high > hb.high) { hb.high = k.high; hb.hiMin = m; }
+            if (k.low < hb.low) { hb.low = k.low; hb.loMin = m; }
+        }
+    }
+
+    for (let i = 60; i < len; i++) {
+        const currentTick = formattedData[i];
+        const prevTick = formattedData[i - 1];
+
+        // 24h OLS bands
+        const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
+        const ptsHi = [], ptsLo = [];
+        let sumX_hi = 0, sumY_hi = 0, sumX_lo = 0, sumY_lo = 0;
+        let validHours = 0;
+
+        for (let h = 23; h >= 0; h--) {
+            const hKey = currentHourKey - h * 3600;
+            const hb = hourlyMap.get(hKey);
+            if (hb) {
+                validHours++;
+                const x_hi = (23 - h) + hb.hiMin / 60.0;
+                const x_lo = (23 - h) + hb.loMin / 60.0;
+                ptsHi.push({ x: x_hi, y: hb.high });
+                ptsLo.push({ x: x_lo, y: hb.low });
+                sumX_hi += x_hi; sumY_hi += hb.high;
+                sumX_lo += x_lo; sumY_lo += hb.low;
+            }
+        }
+
+        if (validHours < 12) continue;
+
+        const meanX_hi = sumX_hi / validHours, meanY_hi = sumY_hi / validHours;
+        const meanX_lo = sumX_lo / validHours, meanY_lo = sumY_lo / validHours;
+
+        let num_hi = 0, den_hi = 0, num_lo = 0, den_lo = 0;
+        for (let p = 0; p < ptsHi.length; p++) {
+            num_hi += (ptsHi[p].x - meanX_hi) * (ptsHi[p].y - meanY_hi);
+            den_hi += Math.pow(ptsHi[p].x - meanX_hi, 2);
+            num_lo += (ptsLo[p].x - meanX_lo) * (ptsLo[p].y - meanY_lo);
+            den_lo += Math.pow(ptsLo[p].x - meanX_lo, 2);
+        }
+
+        const A1 = den_hi > 1e-9 ? num_hi / den_hi : 0;
+        const A0 = meanY_hi - A1 * meanX_hi;
+        const B1 = den_lo > 1e-9 ? num_lo / den_lo : 0;
+        const B0 = meanY_lo - B1 * meanX_lo;
+
+        let resSum_hi = 0, resSum_lo = 0;
+        for (let p = 0; p < ptsHi.length; p++) {
+            resSum_hi += Math.pow(ptsHi[p].y - (A0 + A1 * ptsHi[p].x), 2);
+            resSum_lo += Math.pow(ptsLo[p].y - (B0 + B1 * ptsLo[p].x), 2);
+        }
+        const df_res = Math.max(1, validHours - 2);
+        const sigma_hi = Math.sqrt(resSum_hi / df_res) + 1e-9;
+        const sigma_lo = Math.sqrt(resSum_lo / df_res) + 1e-9;
+
+        const curMin = Math.floor((currentTick.time % 3600) / 60);
+        const xx_curr = 24 + curMin / 60.0;
+        const zU_curr = (currentTick.close - (A0 + A1 * xx_curr)) / sigma_hi;
+        const zL_curr = ((B0 + B1 * xx_curr) - currentTick.close) / sigma_lo;
+
+        // Node G Detection
+        const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
+        const lookback = Math.min(i, 1440);
+        let sum_lr = 0, sum_sq_lr = 0;
+        const vols = [];
+        for (let j = i - lookback + 1; j <= i; j++) {
+            const lr = Math.log(formattedData[j].close / (formattedData[j - 1].close + 1e-9));
+            sum_lr += lr;
+            sum_sq_lr += lr * lr;
+            vols.push(formattedData[j].volume || 0);
+        }
+        const mean_lr = sum_lr / lookback;
+        const std_lr = Math.sqrt(Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr));
+        const z_ret = (lr_curr - mean_lr) / std_lr;
+
+        vols.sort((a, b) => a - b);
+        const midIdx = Math.floor(vols.length / 2);
+        const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
+        const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
+        const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
+        const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
+
+        let rawSig = 0;
+        if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0) {
+            if (lr_curr > 0 && zU_curr >= 1.0) rawSig = 1;
+            else if (lr_curr < 0 && zL_curr >= 1.0) rawSig = -1;
+        }
+
+        if (rawSig === 0) continue;
+
+        const currOV = overlapData[i]?.value || 0;
+        const isDoom = doomHistData[i]?.value > 0;
+
+        // Overlap rejection
+        if (minOverlap !== null && currOV < minOverlap) {
+            markers.push({
+                time: currentTick.time,
+                position: rawSig === 1 ? 'belowBar' : 'aboveBar',
+                color: '#facc15',
+                shape: 'circle',
+                text: `F9:OV Blk (${currOV.toFixed(2)})`,
+                size: 0.9
+            });
+            continue;
+        }
+
+        // Doom Cell rejection
+        if (blockDoom && isDoom) {
+            markers.push({
+                time: currentTick.time,
+                position: rawSig === 1 ? 'belowBar' : 'aboveBar',
+                color: '#ec4899',
+                shape: 'circle',
+                text: 'F9:Doom Blk',
+                size: 0.9
+            });
+            continue;
+        }
+
+        // Approved signal
+        const label = minOverlap === 0.34 ? 'F9:OV34' : 'F9:OV28';
+        markers.push({
+            time: currentTick.time,
+            position: rawSig === 1 ? 'belowBar' : 'aboveBar',
+            color: rawSig === 1 ? '#10b981' : '#f43f5e',
+            shape: rawSig === 1 ? 'arrowUp' : 'arrowDown',
+            text: rawSig === 1 ? `${label} LONG` : `${label} SHORT`,
+            size: 2
+        });
+    }
+
+    return markers;
+}
+

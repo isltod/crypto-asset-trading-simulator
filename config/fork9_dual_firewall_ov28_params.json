@@ -1,0 +1,14 @@
+{
+  "name": "Fork 9: Dual Firewall (OV<0.28 + Doom Cell)",
+  "node": "Node G",
+  "z_ret_thresh": 4.0,
+  "z_vol_thresh": 5.0,
+  "z_band_thresh": 1.0,
+  "min_overlap_24h": 0.28,
+  "block_doom_cell": true,
+  "doom_quantile": 0.6667,
+  "rolling_window_days": 30,
+  "exit_mode": "PURE_SAR",
+  "recent_3m_pnl": "+19.70%",
+  "recent_3m_mdd": "14.56%"
+}

@@ -426,6 +426,8 @@ function saveUIConfig() {
         showVWAP: document.getElementById('toggle-vwap')?.checked || false,
         showVol: document.getElementById('toggle-vol')?.checked || false,
         volHeight: parseInt(document.getElementById('vol-chart-container')?.style.height || '130', 10),
+        showOverlap: document.getElementById('toggle-overlap')?.checked ?? true,
+        overlapHeight: parseInt(document.getElementById('overlap-chart-container')?.style.height || '130', 10),
         vTF: document.getElementById('v-tf')?.value || '15m',
         vVwapWindow: parseInt(document.getElementById('v-vwap-window')?.value || '96', 10),
         vVwapSigma: parseFloat(document.getElementById('v-vwap-sigma')?.value || '2.0'),
@@ -449,6 +451,12 @@ function loadUIConfig() {
             }
             if (config.volHeight && document.getElementById('vol-chart-container')) {
                 document.getElementById('vol-chart-container').style.height = `${config.volHeight}px`;
+            }
+            if (typeof config.showOverlap === 'boolean' && document.getElementById('toggle-overlap')) {
+                document.getElementById('toggle-overlap').checked = config.showOverlap;
+            }
+            if (config.overlapHeight && document.getElementById('overlap-chart-container')) {
+                document.getElementById('overlap-chart-container').style.height = `${config.overlapHeight}px`;
             }
             if (config.maPeriod && document.getElementById('ma-length')) {
                 document.getElementById('ma-length').value = config.maPeriod;
@@ -611,7 +619,8 @@ async function init() {
         document.getElementById('wt-chart-container'), 
         document.getElementById('macd-chart-container'), 
         document.getElementById('stoch-chart-container'),
-        document.getElementById('vol-chart-container')
+        document.getElementById('vol-chart-container'),
+        document.getElementById('overlap-chart-container')
     );
 
     await loadSymbols();
@@ -726,6 +735,12 @@ async function init() {
                     updateVolVisibility();
                 }
                 updateFork7Visibility();
+            } else if (state.signalType === 'fork9_dual_firewall_ov34' || state.signalType === 'fork9_dual_firewall_ov28') {
+                const toggleOverlap = document.getElementById('toggle-overlap');
+                if (toggleOverlap && !toggleOverlap.checked) {
+                    toggleOverlap.checked = true;
+                    updateOverlapVisibility();
+                }
             }
             saveUIConfig();
             applyIndicatorMarkers();
@@ -1092,6 +1107,25 @@ async function init() {
     }
     toggleVol?.addEventListener('change', updateVolVisibility);
 
+    // Fork 9 Overlap Sub-Chart bindings
+    const toggleOverlap = document.getElementById('toggle-overlap');
+    const overlapContainer = document.getElementById('overlap-chart-container');
+    const resizerOverlap = document.getElementById('chart-resizer-overlap');
+
+    function updateOverlapVisibility() {
+        const isVisible = toggleOverlap ? toggleOverlap.checked : false;
+        if (isVisible) {
+            overlapContainer?.classList.remove('hidden');
+            resizerOverlap?.classList.remove('hidden');
+        } else {
+            overlapContainer?.classList.add('hidden');
+            resizerOverlap?.classList.add('hidden');
+        }
+        saveUIConfig();
+        applyIndicatorMarkers();
+    }
+    toggleOverlap?.addEventListener('change', updateOverlapVisibility);
+
     // Resizer Dragging Logic
     let activeResizer = null;
     let isResizing = false;
@@ -1177,6 +1211,20 @@ async function init() {
         resizerVol.addEventListener('touchstart', (e) => {
             if (e.touches.length > 0) {
                 startResize(e.touches[0].clientY, resizerVol, volContainer);
+                e.preventDefault();
+            }
+        }, { passive: false });
+    }
+
+    if (resizerOverlap) {
+        resizerOverlap.addEventListener('mousedown', (e) => {
+            startResize(e.clientY, resizerOverlap, overlapContainer);
+            e.preventDefault();
+        });
+
+        resizerOverlap.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 0) {
+                startResize(e.touches[0].clientY, resizerOverlap, overlapContainer);
                 e.preventDefault();
             }
         }, { passive: false });
@@ -1294,6 +1342,14 @@ async function init() {
     const volContainerEl = document.getElementById('vol-chart-container');
     if (volContainerEl) volResizeObserver.observe(volContainerEl);
 
+    const overlapResizeObserver = new ResizeObserver(entries => {
+        if (!state.overlapChart) return;
+        const { width, height } = entries[0].contentRect;
+        state.overlapChart.applyOptions({ width, height });
+    });
+    const overlapContainerEl = document.getElementById('overlap-chart-container');
+    if (overlapContainerEl) overlapResizeObserver.observe(overlapContainerEl);
+
     updateWTVisibility();
     updateMACDVisibility();
     updateStochVisibility();
@@ -1301,6 +1357,7 @@ async function init() {
     updateVWAPVisibility();
     updateVolVisibility();
     updateFork7Visibility();
+    updateOverlapVisibility();
 }
 
 document.addEventListener('DOMContentLoaded', init);

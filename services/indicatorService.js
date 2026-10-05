@@ -522,5 +522,186 @@ module.exports = {
     calculateStochRSI,
     calculateVWAPClimax,
     calculateExtremeBreakout,
-    calculateFork7Candidate3
+    calculateFork7Candidate3,
+    calculateFork9DualFirewall,
+    calculateFork9DualFirewallOV34: (klines) => calculateFork9DualFirewall(klines, 0.34, true),
+    calculateFork9DualFirewallOV28: (klines) => calculateFork9DualFirewall(klines, 0.28, true)
 };
+
+/**
+ * Fork 9 Track 2: Dual Firewall (Bar Overlap Ratio + Causal Doom Cell Gating)
+ * @param {Array} klines 1m kline data
+ * @param {number} minOverlap Minimum 24h bar overlap threshold (e.g., 0.34 or 0.28)
+ * @param {boolean} blockDoom Whether to block the Doom Cell (top 33% ER & top 33% Overlap)
+ */
+function calculateFork9DualFirewall(klines, minOverlap = 0.34, blockDoom = true) {
+    const len = klines.length;
+    if (len < 1441) return 'HOLD';
+
+    const currentTick = klines[len - 1];
+    const prevTick = klines[len - 2];
+
+    // 1. Hourly aggregation for 24h OLS bands
+    const hourlyBars = [];
+    let curHKey = null;
+    let hHigh = -Infinity, hLow = Infinity;
+    let hiMin = 0, loMin = 0;
+
+    for (let i = 0; i < len; i++) {
+        const k = klines[i];
+        const hKey = Math.floor(k.time / 3600) * 3600;
+        if (hKey !== curHKey) {
+            if (curHKey !== null) {
+                hourlyBars.push({ hKey: curHKey, high: hHigh, low: hLow, hiMin, loMin });
+            }
+            curHKey = hKey;
+            hHigh = k.high;
+            hLow = k.low;
+            hiMin = Math.floor((k.time % 3600) / 60);
+            loMin = hiMin;
+        } else {
+            const m = Math.floor((k.time % 3600) / 60);
+            if (k.high > hHigh) { hHigh = k.high; hiMin = m; }
+            if (k.low < hLow) { hLow = k.low; loMin = m; }
+        }
+    }
+    if (curHKey !== null) {
+        hourlyBars.push({ hKey: curHKey, high: hHigh, low: hLow, hiMin, loMin });
+    }
+
+    if (hourlyBars.length < 24) return 'HOLD';
+    const last24Hours = hourlyBars.slice(-24);
+
+    let sumX_hi = 0, sumY_hi = 0, sumX_lo = 0, sumY_lo = 0;
+    const ptsHi = [], ptsLo = [];
+    for (let i = 0; i < 24; i++) {
+        const hb = last24Hours[i];
+        const x_hi = i + hb.hiMin / 60.0;
+        const y_hi = hb.high;
+        const x_lo = i + hb.loMin / 60.0;
+        const y_lo = hb.low;
+        ptsHi.push({ x: x_hi, y: y_hi });
+        ptsLo.push({ x: x_lo, y: y_lo });
+        sumX_hi += x_hi; sumY_hi += y_hi;
+        sumX_lo += x_lo; sumY_lo += y_lo;
+    }
+    const meanX_hi = sumX_hi / 24, meanY_hi = sumY_hi / 24;
+    const meanX_lo = sumX_lo / 24, meanY_lo = sumY_lo / 24;
+
+    let num_hi = 0, den_hi = 0, num_lo = 0, den_lo = 0;
+    for (let i = 0; i < 24; i++) {
+        num_hi += (ptsHi[i].x - meanX_hi) * (ptsHi[i].y - meanY_hi);
+        den_hi += Math.pow(ptsHi[i].x - meanX_hi, 2);
+        num_lo += (ptsLo[i].x - meanX_lo) * (ptsLo[i].y - meanY_lo);
+        den_lo += Math.pow(ptsLo[i].x - meanX_lo, 2);
+    }
+    const A1 = den_hi > 1e-9 ? num_hi / den_hi : 0;
+    const A0 = meanY_hi - A1 * meanX_hi;
+    const B1 = den_lo > 1e-9 ? num_lo / den_lo : 0;
+    const B0 = meanY_lo - B1 * meanX_lo;
+
+    let resSum_hi = 0, resSum_lo = 0;
+    for (let i = 0; i < 24; i++) {
+        resSum_hi += Math.pow(ptsHi[i].y - (A0 + A1 * ptsHi[i].x), 2);
+        resSum_lo += Math.pow(ptsLo[i].y - (B0 + B1 * ptsLo[i].x), 2);
+    }
+    const sigma_hi = Math.sqrt(resSum_hi / 22) + 1e-9;
+    const sigma_lo = Math.sqrt(resSum_lo / 22) + 1e-9;
+
+    const curMin = Math.floor((currentTick.time % 3600) / 60);
+    const xx_curr = 24 + curMin / 60.0;
+    const zU_curr = (currentTick.close - (A0 + A1 * xx_curr)) / sigma_hi;
+    const zL_curr = ((B0 + B1 * xx_curr) - currentTick.close) / sigma_lo;
+
+    // 2. Node G Trigger Check (|z_ret| >= 4.0, z_vol >= 5.0, z_band >= 1.0)
+    const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
+    const lookback = 1440;
+    let sum_lr = 0, sum_sq_lr = 0;
+    const vols = [];
+    for (let j = len - lookback; j < len; j++) {
+        const lr = Math.log(klines[j].close / (klines[j - 1].close + 1e-9));
+        sum_lr += lr;
+        sum_sq_lr += lr * lr;
+        vols.push(klines[j].volume || 0);
+    }
+    const mean_lr = sum_lr / lookback;
+    const std_lr = Math.sqrt(Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr));
+    const z_ret = (lr_curr - mean_lr) / std_lr;
+
+    vols.sort((a, b) => a - b);
+    const midIdx = Math.floor(vols.length / 2);
+    const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
+    const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
+    const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
+    const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
+
+    let rawSig = 0;
+    if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0) {
+        if (lr_curr > 0 && zU_curr >= 1.0) rawSig = 1;
+        else if (lr_curr < 0 && zL_curr >= 1.0) rawSig = -1;
+    }
+
+    if (rawSig === 0) return 'HOLD';
+
+    // 3. Firewall 1: 24h Bar Overlap Ratio
+    let sumOv = 0;
+    for (let j = len - lookback; j < len; j++) {
+        const p = klines[j - 1];
+        const c = klines[j];
+        const inter = Math.max(0, Math.min(c.high, p.high) - Math.max(c.low, p.low));
+        const union = Math.max(1e-6, Math.max(c.high, p.high) - Math.min(c.low, p.low));
+        sumOv += (inter / union);
+    }
+    const currOverlap = sumOv / lookback;
+
+    if (minOverlap !== null && currOverlap < minOverlap) {
+        console.log(`[Fork 9 Dual Firewall] ${rawSig === 1 ? 'LONG' : 'SHORT'} Node G rejected: Overlap24h ${currOverlap.toFixed(4)} < ${minOverlap}`);
+        return 'HOLD';
+    }
+
+    // 4. Firewall 2: Causal Doom Cell Gating (ER Top 33% AND Overlap Top 33%)
+    if (blockDoom) {
+        let path = 0;
+        for (let j = len - lookback; j < len; j++) {
+            path += Math.abs(klines[j].close - klines[j - 1].close);
+        }
+        const disp = Math.abs(currentTick.close - klines[len - lookback].close);
+        const currER = path > 0 ? disp / path : 0.0;
+
+        // Sample historical 24h ER and Overlap over available bars (up to 30 days)
+        const histWindow = Math.min(len - 1440, 30 * 1440);
+        if (histWindow >= 1440) {
+            const erHist = [];
+            const ovHist = [];
+            const step = 15;
+            for (let idx = len - histWindow; idx < len; idx += step) {
+                let p_sub = 0;
+                let ov_sub = 0;
+                for (let k = idx - 1440; k < idx; k++) {
+                    p_sub += Math.abs(klines[k].close - klines[k - 1].close);
+                    const inter_s = Math.max(0, Math.min(klines[k].high, klines[k - 1].high) - Math.max(klines[k].low, klines[k - 1].low));
+                    const union_s = Math.max(1e-6, Math.max(klines[k].high, klines[k - 1].high) - Math.min(klines[k].low, klines[k - 1].low));
+                    ov_sub += (inter_s / union_s);
+                }
+                const d_sub = Math.abs(klines[idx].close - klines[idx - 1440].close);
+                erHist.push(p_sub > 0 ? d_sub / p_sub : 0.0);
+                ovHist.push(ov_sub / 1440);
+            }
+
+            erHist.sort((a, b) => a - b);
+            ovHist.sort((a, b) => a - b);
+            const qIdx = Math.floor(erHist.length * 0.6667);
+            const qER = erHist[qIdx] || 0.05;
+            const qOV = ovHist[qIdx] || 0.35;
+
+            if (currER > qER && currOverlap > qOV) {
+                console.log(`[Fork 9 Dual Firewall] ${rawSig === 1 ? 'LONG' : 'SHORT'} Node G rejected by DOOM CELL: ER=${currER.toFixed(4)} > ${qER.toFixed(4)} AND Overlap=${currOverlap.toFixed(4)} > ${qOV.toFixed(4)}`);
+                return 'HOLD';
+            }
+        }
+    }
+
+    const dirStr = rawSig === 1 ? 'LONG' : 'SHORT';
+    console.log(`[Fork 9 Dual Firewall (minOV=${minOverlap})] Signal APPROVED: ${dirStr}. Overlap24h=${currOverlap.toFixed(4)}, z_ret=${z_ret.toFixed(2)}, z_vol=${z_vol.toFixed(2)}`);
+    return dirStr;
+}

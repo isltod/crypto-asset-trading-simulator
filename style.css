@@ -416,6 +416,16 @@ body {
     display: none;
 }
 
+.overlap-chart-container {
+    height: 130px;
+    width: 100%;
+    position: relative;
+}
+
+.overlap-chart-container.hidden {
+    display: none;
+}
+
 /* Loading overlay */
 .loading-overlay {
     position: absolute;
