@@ -1179,7 +1179,9 @@ export function calculateFork9OverlapData(formattedData) {
 
         if (i >= 1440) {
             sumOv -= perBarOverlap[i - 1440];
-            sumPath -= Math.abs(formattedData[i - 1440].close - formattedData[i - 1441].close);
+            if (i > 1440) {
+                sumPath -= Math.abs(formattedData[i - 1440].close - formattedData[i - 1441].close);
+            }
             const disp = Math.abs(formattedData[i].close - formattedData[i - 1440].close);
             ovArr[i] = sumOv / 1440;
             erArr[i] = sumPath > 0 ? disp / sumPath : 0;
@@ -1191,6 +1193,9 @@ export function calculateFork9OverlapData(formattedData) {
     }
 
     // 3. Compute 30d rolling quantiles for Doom Cell (top 33% ER & top 33% Overlap)
+    let cachedQER = 0.05;
+    let cachedQOV = 0.35;
+
     for (let i = 0; i < len; i++) {
         const t = formattedData[i].time;
         const ovVal = ovArr[i];
@@ -1199,10 +1204,9 @@ export function calculateFork9OverlapData(formattedData) {
         overlapData.push({ time: t, value: ovVal });
         erData.push({ time: t, value: erVal });
 
-        // Calculate quantile over available history
+        // Calculate quantile over available history every 60 bars (1 hour)
         const lookback = Math.min(i, 30 * 1440);
-        let isDoom = false;
-        if (lookback >= 1440) {
+        if (lookback >= 1440 && (i % 60 === 0 || i === len - 1)) {
             const histER = [];
             const histOV = [];
             const step = Math.max(1, Math.floor(lookback / 200));
@@ -1213,13 +1217,11 @@ export function calculateFork9OverlapData(formattedData) {
             histER.sort((a, b) => a - b);
             histOV.sort((a, b) => a - b);
             const qIdx = Math.floor(histER.length * 0.6667);
-            const qER = histER[qIdx];
-            const qOV = histOV[qIdx];
-
-            if (erVal > qER && ovVal > qOV) {
-                isDoom = true;
-            }
+            cachedQER = histER[qIdx];
+            cachedQOV = histOV[qIdx];
         }
+
+        const isDoom = lookback >= 1440 && (erVal > cachedQER && ovVal > cachedQOV);
 
         doomHistData.push({
             time: t,
@@ -1271,6 +1273,10 @@ export function calculateFork9DualFirewallMarkers(formattedData, mtf1h = null, m
     for (let i = 60; i < len; i++) {
         const currentTick = formattedData[i];
         const prevTick = formattedData[i - 1];
+
+        // 1. Fast preliminary check: Node G strictly requires |log_return| >= 0.003
+        const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
+        if (Math.abs(lr_curr) < 0.003) continue;
 
         // 24h OLS bands
         const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
@@ -1325,7 +1331,6 @@ export function calculateFork9DualFirewallMarkers(formattedData, mtf1h = null, m
         const zL_curr = ((B0 + B1 * xx_curr) - currentTick.close) / sigma_lo;
 
         // Node G Detection
-        const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
         const lookback = Math.min(i, 1440);
         let sum_lr = 0, sum_sq_lr = 0;
         const vols = [];
