@@ -1179,10 +1179,11 @@ export function calculateFork9OverlapData(formattedData) {
 
         if (i >= 1440) {
             sumOv -= perBarOverlap[i - 1440];
-            if (i > 1440) {
+            if (i > 1440 && formattedData[i - 1440] && formattedData[i - 1441]) {
                 sumPath -= Math.abs(formattedData[i - 1440].close - formattedData[i - 1441].close);
             }
-            const disp = Math.abs(formattedData[i].close - formattedData[i - 1440].close);
+            const p1440 = formattedData[i - 1440] || formattedData[0];
+            const disp = Math.abs(formattedData[i].close - p1440.close);
             ovArr[i] = sumOv / 1440;
             erArr[i] = sumPath > 0 ? disp / sumPath : 0;
         } else {
@@ -1273,24 +1274,54 @@ export function calculateFork9DualFirewallMarkers(formattedData, mtf1h = null, m
     for (let i = 60; i < len; i++) {
         const currentTick = formattedData[i];
         const prevTick = formattedData[i - 1];
-
-        // 1. Fast preliminary check: Node G strictly requires |log_return| >= 0.003
         const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
-        if (Math.abs(lr_curr) < 0.003) continue;
 
-        // 24h OLS bands
+        // Fast guard: Node G requires |z_ret| >= 4.0.
+        // 1m BTC 24h return standard deviation is typically 3~6 bps.
+        // If |lr_curr| < 0.0008 (8 bps), |z_ret| mathematically cannot reach 4.0.
+        if (Math.abs(lr_curr) < 0.0008) continue;
+
+        // 1. Check z_ret
+        const lookback = Math.min(i, 1440);
+        let sum_lr = 0, sum_sq_lr = 0;
+        for (let j = i - lookback + 1; j <= i; j++) {
+            const lr = Math.log(formattedData[j].close / (formattedData[j - 1].close + 1e-9));
+            sum_lr += lr;
+            sum_sq_lr += lr * lr;
+        }
+        const mean_lr = sum_lr / lookback;
+        const std_lr = Math.sqrt(Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr));
+        const z_ret = (lr_curr - mean_lr) / std_lr;
+
+        if (Math.abs(z_ret) < 4.0) continue;
+
+        // 2. Check z_vol (Volume Robust z-score)
+        const vols = [];
+        for (let j = i - lookback + 1; j <= i; j++) {
+            vols.push(formattedData[j].volume || 0);
+        }
+        vols.sort((a, b) => a - b);
+        const midIdx = Math.floor(vols.length / 2);
+        const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
+        const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
+        const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
+        const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
+
+        if (z_vol < 5.0) continue;
+
+        // 3. Compute 24h OLS bands (24 completed hours h = 24..1) ONLY for passing bars
         const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
         const ptsHi = [], ptsLo = [];
         let sumX_hi = 0, sumY_hi = 0, sumX_lo = 0, sumY_lo = 0;
         let validHours = 0;
 
-        for (let h = 23; h >= 0; h--) {
+        for (let h = 24; h >= 1; h--) {
             const hKey = currentHourKey - h * 3600;
             const hb = hourlyMap.get(hKey);
             if (hb) {
                 validHours++;
-                const x_hi = (23 - h) + hb.hiMin / 60.0;
-                const x_lo = (23 - h) + hb.loMin / 60.0;
+                const x_hi = (24 - h) + hb.hiMin / 60.0;
+                const x_lo = (24 - h) + hb.loMin / 60.0;
                 ptsHi.push({ x: x_hi, y: hb.high });
                 ptsLo.push({ x: x_lo, y: hb.low });
                 sumX_hi += x_hi; sumY_hi += hb.high;
@@ -1330,32 +1361,9 @@ export function calculateFork9DualFirewallMarkers(formattedData, mtf1h = null, m
         const zU_curr = (currentTick.close - (A0 + A1 * xx_curr)) / sigma_hi;
         const zL_curr = ((B0 + B1 * xx_curr) - currentTick.close) / sigma_lo;
 
-        // Node G Detection
-        const lookback = Math.min(i, 1440);
-        let sum_lr = 0, sum_sq_lr = 0;
-        const vols = [];
-        for (let j = i - lookback + 1; j <= i; j++) {
-            const lr = Math.log(formattedData[j].close / (formattedData[j - 1].close + 1e-9));
-            sum_lr += lr;
-            sum_sq_lr += lr * lr;
-            vols.push(formattedData[j].volume || 0);
-        }
-        const mean_lr = sum_lr / lookback;
-        const std_lr = Math.sqrt(Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr));
-        const z_ret = (lr_curr - mean_lr) / std_lr;
-
-        vols.sort((a, b) => a - b);
-        const midIdx = Math.floor(vols.length / 2);
-        const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
-        const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
-        const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
-        const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
-
         let rawSig = 0;
-        if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0) {
-            if (lr_curr > 0 && zU_curr >= 1.0) rawSig = 1;
-            else if (lr_curr < 0 && zL_curr >= 1.0) rawSig = -1;
-        }
+        if (lr_curr > 0 && zU_curr >= 1.0) rawSig = 1;
+        else if (lr_curr < 0 && zL_curr >= 1.0) rawSig = -1;
 
         if (rawSig === 0) continue;
 

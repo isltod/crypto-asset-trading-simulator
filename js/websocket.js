@@ -40,13 +40,14 @@ export function connectWebSocket(symbol, onAccountRefresh) {
             }
 
             const lastExistingTick = state.klineData[state.klineData.length - 1];
+            const isNewBar = !lastExistingTick || lastExistingTick.time !== tick.time;
             if (lastExistingTick && lastExistingTick.time === tick.time) {
                 state.klineData[state.klineData.length - 1] = tick;
             } else {
                 state.klineData.push(tick);
             }
 
-            updateIndicatorsLive();
+            updateIndicatorsLive(isNewBar);
             updatePriceDisplay(tick.close, state.lastClose);
 
             if (state.activePosition && state.authToken) {

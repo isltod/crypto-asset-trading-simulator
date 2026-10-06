@@ -569,8 +569,8 @@ function calculateFork9DualFirewall(klines, minOverlap = 0.34, blockDoom = true)
         hourlyBars.push({ hKey: curHKey, high: hHigh, low: hLow, hiMin, loMin });
     }
 
-    if (hourlyBars.length < 24) return 'HOLD';
-    const last24Hours = hourlyBars.slice(-24);
+    if (hourlyBars.length < 25) return 'HOLD';
+    const last24Hours = hourlyBars.slice(-25, -1);
 
     let sumX_hi = 0, sumY_hi = 0, sumX_lo = 0, sumY_lo = 0;
     const ptsHi = [], ptsLo = [];
