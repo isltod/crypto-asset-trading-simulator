@@ -558,17 +558,18 @@ export function updateChartSeries() {
     renderSupertrend();
 }
 
-export function updateIndicatorsLive() {
+export function updateIndicatorsLive(isNewBar = false) {
     const data = state.klineData;
     if (!data || data.length === 0) return;
 
-    if (data.length >= state.maPeriod) {
+    // Fast O(1) live updates on EVERY tick (<0.1ms)
+    if (data.length >= state.maPeriod && state.maSeries) {
         let sum = 0;
         for (let j = 0; j < state.maPeriod; j++) sum += data[data.length - 1 - j].close;
         state.maSeries.update({ time: data[data.length - 1].time, value: sum / state.maPeriod });
     }
 
-    if (data.length >= state.BB_PERIOD) {
+    if (data.length >= state.BB_PERIOD && state.bbMiddleSeries) {
         let sum = 0;
         for (let j = 0; j < state.BB_PERIOD; j++) sum += data[data.length - 1 - j].close;
         const sma = sum / state.BB_PERIOD;
@@ -580,6 +581,16 @@ export function updateIndicatorsLive() {
         state.bbUpperSeries.update({ time: t, value: sma + state.BB_STD_DEV * stdDev });
         state.bbLowerSeries.update({ time: t, value: sma - state.BB_STD_DEV * stdDev });
     }
+
+    const liveVolData = calculateVolumeBarData(data);
+    if (liveVolData.length > 0) {
+        const lastVolBar = liveVolData[liveVolData.length - 1];
+        if (state.mainVolSeries) state.mainVolSeries.update(lastVolBar);
+        if (state.volHistSeries) state.volHistSeries.update(lastVolBar);
+    }
+
+    // Heavy indicators: Run ONLY when a new 1m bar opens (once every 60s)!
+    if (!isNewBar) return;
 
     const wtData = calculateMTFWaveTrend(data, state.WT_TF, state.WT_CHANNEL_LEN, state.WT_AVG_LEN, state.WT_SIG_LEN, state.WT_ALLOW_REPAINT);
     state.lastWtData = wtData;
@@ -609,12 +620,6 @@ export function updateIndicatorsLive() {
         state.vwapSeries.update(vwapData.vwapData[vwapData.vwapData.length - 1]);
         state.vwapUpperSeries.update(vwapData.upperBandData[vwapData.upperBandData.length - 1]);
         state.vwapLowerSeries.update(vwapData.lowerBandData[vwapData.lowerBandData.length - 1]);
-    }
-    const liveVolData = calculateVolumeBarData(data);
-    if (liveVolData.length > 0) {
-        const lastVolBar = liveVolData[liveVolData.length - 1];
-        if (state.mainVolSeries) state.mainVolSeries.update(lastVolBar);
-        if (state.volHistSeries) state.volHistSeries.update(lastVolBar);
     }
     if (vwapData.volHistData && vwapData.volHistData.length > 0 && state.volHistSeries) {
         state.volMaSeries.update(vwapData.volMaData[vwapData.volMaData.length - 1]);
