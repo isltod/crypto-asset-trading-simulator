@@ -3,15 +3,7 @@ const fs = require('fs');
 const { db } = require('../config/db');
 const { latestPrices } = require('./marketService');
 
-let fork7Params = null;
-try {
-    const p = path.join(__dirname, '../config/fork7_candidate3_params.json');
-    if (fs.existsSync(p)) {
-        fork7Params = JSON.parse(fs.readFileSync(p, 'utf8'));
-    }
-} catch (e) {
-    console.error("[Fork 7] Failed to load fork7_candidate3_params.json:", e.message);
-}
+
 
 const closingUsers = new Set();
 const openingUsers = new Set();
@@ -22,9 +14,17 @@ function setNotifyUserFunction(fn) {
     notifyUserFn = fn;
 }
 
-function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
+function openPositionInternal(userId, symbol, side, currentPrice, sizeMultOrCb = 1.0, cb = null) {
+    let sizeMult = 1.0;
+    let callback = cb;
+    if (typeof sizeMultOrCb === 'function') {
+        callback = sizeMultOrCb;
+        sizeMult = 1.0;
+    } else if (typeof sizeMultOrCb === 'number') {
+        sizeMult = Math.min(1.0, Math.max(0.1, sizeMultOrCb));
+    }
     if (openingUsers.has(userId)) {
-        if (cb) cb(false);
+        if (callback) callback(false);
         return;
     }
     openingUsers.add(userId);
@@ -32,7 +32,7 @@ function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
     const entryPrice = latestPrices[symbol] || currentPrice;
     if (!entryPrice) {
         openingUsers.delete(userId);
-        if (cb) cb(false);
+        if (callback) callback(false);
         return;
     }
 
@@ -40,22 +40,22 @@ function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
         db.get(`SELECT * FROM positions WHERE user_id = ?`, [userId], (err, pos) => {
             if (pos || err) {
                 openingUsers.delete(userId);
-                if (cb) cb(false);
+                if (callback) callback(false);
                 return;
             }
 
             db.get(`SELECT * FROM accounts WHERE user_id = ?`, [userId], (err, account) => {
                 if (!account || err) {
                     openingUsers.delete(userId);
-                    if (cb) cb(false);
+                    if (callback) callback(false);
                     return;
                 }
                 
-                const margin = account.virtual_capital;
+                const margin = account.virtual_capital * sizeMult;
                 if (margin <= 0) {
                     openingUsers.delete(userId);
                     console.log(`[AutoTrade] User ${userId} has insufficient capital: ${margin}`);
-                    if (cb) cb(false);
+                    if (callback) callback(false);
                     return;
                 }
 
@@ -68,7 +68,7 @@ function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
                 db.run(`UPDATE accounts SET virtual_capital = ? WHERE user_id = ?`, [newCapital, userId], (err) => {
                     if (err) {
                         openingUsers.delete(userId);
-                        if (cb) cb(false);
+                        if (callback) callback(false);
                         return;
                     }
                     db.run(`INSERT INTO positions (user_id, symbol, side, entry_price, size, margin, leverage, entry_fee, capital_before, entry_type) 
@@ -76,7 +76,7 @@ function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
                             [userId, symbol, side, entryPrice, size, margin, account.leverage, entryFee, margin], function(err) {
                         openingUsers.delete(userId);
                         if (err) {
-                            if (cb) cb(false);
+                            if (callback) callback(false);
                             return;
                         }
                         
@@ -85,7 +85,7 @@ function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
                         if (notifyUserFn) {
                             notifyUserFn(userId, { type: 'position_opened', data: { symbol, side, entry_price: entryPrice, size, margin, leverage: account.leverage, newCapital, entry_time: new Date().toISOString(), entry_type: 'AUTO' } });
                         }
-                        if (cb) cb(true);
+                        if (callback) callback(true);
                     });
                 });
             });
@@ -96,7 +96,7 @@ function openPositionInternal(userId, symbol, side, currentPrice, cb = null) {
 function closePosition(userId, specificPrice, res = null, cb = null) {
     if (closingUsers.has(userId)) {
         if (res) res.status(400).json({ error: "Close position already in progress" });
-        if (cb) cb(false);
+        if (callback) callback(false);
         return;
     }
     closingUsers.add(userId);
@@ -105,7 +105,7 @@ function closePosition(userId, specificPrice, res = null, cb = null) {
         if (err || !pos) {
             closingUsers.delete(userId);
             if (res) res.status(400).json({ error: "No open position" });
-            if (cb) cb(false);
+            if (callback) callback(false);
             return;
         }
 
@@ -113,7 +113,7 @@ function closePosition(userId, specificPrice, res = null, cb = null) {
         if (!closePrice) {
             closingUsers.delete(userId);
             if (res) res.status(400).json({ error: "Price not available" });
-            if (cb) cb(false);
+            if (callback) callback(false);
             return;
         }
 
@@ -153,7 +153,7 @@ function closePosition(userId, specificPrice, res = null, cb = null) {
                 if (res) {
                     res.json({ message: "Position closed", ...result });
                 }
-                if (cb) cb(true);
+                if (callback) callback(true);
             });
         });
     });
@@ -246,44 +246,13 @@ function checkTPSL(symbol, currentPrice) {
                 }
             }
 
-            // Step 4: Fork 7 Candidate 3-EG Firewall Exits
-            if (pos.signal_type === 'fork7_candidate3' && pos.entry_type === 'AUTO') {
-                const entryTimeMs = new Date(pos.entry_time).getTime();
-                const nowMs = Date.now();
-                const elapsedMs = !isNaN(entryTimeMs) ? nowMs - entryTimeMs : 0;
-                const elapsedMin = Math.floor(elapsedMs / 60000);
-
-                // 1. 720m (12h) Expiry Exit
-                if (elapsedMin >= 720) {
-                    console.log(`[Fork 7] 720m Expiry Exit triggered for user ${pos.user_id}. Elapsed: ${elapsedMin}m`);
+            // Step 4: Fork 13 Trinity v2 Safety Stops & Disaster Stop-Loss
+            if (pos.signal_type === 'fork13_trinity_v2' && pos.entry_type === 'AUTO') {
+                // 15% Disaster Stop-Loss (1x basis price drop >= 15%)
+                if (priceMovePct <= -15.0) {
+                    console.log(`[Fork 13] 15% Disaster Stop-Loss triggered for user ${pos.user_id}. Move: ${priceMovePct.toFixed(2)}% <= -15%`);
                     closePosition(pos.user_id, currentPrice);
                     return;
-                }
-
-                if (fork7Params) {
-                    const priceMoveBp = priceMovePct * 100; // 1% = 100 bp
-                    const mfeBp = (pos.max_price_move_pct || 0) * 100;
-
-                    // 2. 1-minute Micro Firewall (-43.1 bp cut)
-                    if (elapsedMin >= 1 && elapsedMin < 5) {
-                        if (priceMoveBp <= fork7Params.cut_1m_bp) {
-                            console.log(`[Fork 7] 1m Micro Firewall triggered for user ${pos.user_id}. Return: ${priceMoveBp.toFixed(1)} bp <= ${fork7Params.cut_1m_bp} bp`);
-                            closePosition(pos.user_id, currentPrice);
-                            return;
-                        }
-                    }
-
-                    // 3. Dynamic Non-parametric Envelope Cut (t >= 45m, p_t <= Q07, MFE <= 100 bp)
-                    if (elapsedMin >= fork7Params.t_min && elapsedMin < fork7Params.H_MAX) {
-                        const q07 = fork7Params.q07_curve[elapsedMin];
-                        if (q07 !== undefined) {
-                            if (priceMoveBp <= q07 && mfeBp <= fork7Params.mfe_cap_bp) {
-                                console.log(`[Fork 7] Dynamic Envelope Q07 Cut triggered for user ${pos.user_id}. Elapsed: ${elapsedMin}m, Return: ${priceMoveBp.toFixed(1)} bp <= Q07: ${q07.toFixed(1)} bp (MFE: ${mfeBp.toFixed(1)} bp <= 100 bp)`);
-                                closePosition(pos.user_id, currentPrice);
-                                return;
-                            }
-                        }
-                    }
                 }
             }
         });

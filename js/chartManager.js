@@ -6,8 +6,8 @@ import {
     calculateSupertrend,
     calculateMTFVWAPClimax,
     calculateExtremeBreakoutMarkers,
-    calculateFork7Candidate3Markers,
-    calculateFork7SeriesData,
+    calculateFork13TrinityMarkers,
+    calculateFork13SeriesData,
     calculateVolumeBarData,
     calculateFork9OverlapData,
     calculateFork9DualFirewallMarkers
@@ -377,13 +377,13 @@ export function applyIndicatorMarkers() {
         }
     }
 
-    // 6. Fork 7 Candidate 3-EG Markers
-    const toggleFork7 = document.getElementById('toggle-fork7');
-    if ((toggleFork7 && toggleFork7.checked) || state.signalType === 'fork7_candidate3') {
+    // 6. Fork 13 Trinity v2 Markers
+    const toggleFork13 = document.getElementById('toggle-fork13');
+    if ((toggleFork13 && toggleFork13.checked) || state.signalType === 'fork13_trinity_v2') {
         const mtf1h = state.mtfKlines ? state.mtfKlines['1h'] : null;
-        const f7Markers = calculateFork7Candidate3Markers(formattedData, mtf1h);
-        for (let i = 0; i < f7Markers.length; i++) {
-            markers.push(f7Markers[i]);
+        const f13Markers = calculateFork13TrinityMarkers(formattedData, mtf1h);
+        for (let i = 0; i < f13Markers.length; i++) {
+            markers.push(f13Markers[i]);
         }
     }
 
@@ -538,14 +538,11 @@ export function updateChartSeries() {
         state.markerLowerSeries.setData(formattedData.map(d => ({ time: d.time, value: d.low * 0.9992 })));
     }
 
-    // Fork 7 Series Data (OLS bands, pos24 thresholds, Node G vol threshold)
+    // Fork 13 Series Data (OLS 24h Residual Bands)
     const mtf1h = state.mtfKlines ? state.mtfKlines['1h'] : null;
-    const f7Lines = calculateFork7SeriesData(formattedData, mtf1h);
-    if (state.f7OlsUpperSeries) state.f7OlsUpperSeries.setData(f7Lines.olsUpperData);
-    if (state.f7OlsLowerSeries) state.f7OlsLowerSeries.setData(f7Lines.olsLowerData);
-    if (state.f7Pos24LongSeries) state.f7Pos24LongSeries.setData(f7Lines.pos24LongData);
-    if (state.f7Pos24ShortSeries) state.f7Pos24ShortSeries.setData(f7Lines.pos24ShortData);
-    if (state.f7VolThreshSeries && f7Lines.volThreshData) state.f7VolThreshSeries.setData(f7Lines.volThreshData);
+    const f13Lines = calculateFork13SeriesData(formattedData, mtf1h);
+    if (state.f13OlsUpperSeries) state.f13OlsUpperSeries.setData(f13Lines.olsUpperData);
+    if (state.f13OlsLowerSeries) state.f13OlsLowerSeries.setData(f13Lines.olsLowerData);
 
     // Fork 9 Overlap Chart Data
     const f9Data = calculateFork9OverlapData(formattedData);
@@ -632,17 +629,12 @@ export function updateIndicatorsLive(isNewBar = false) {
         state.markerLowerSeries.update({ time: lastBar.time, value: lastBar.low * 0.9992 });
     }
 
-    if (data.length > 0 && state.f7OlsUpperSeries) {
+    if (data.length > 0 && state.f13OlsUpperSeries) {
         const mtf1h = state.mtfKlines ? state.mtfKlines['1h'] : null;
-        const f7Lines = calculateFork7SeriesData(data, mtf1h);
-        if (f7Lines.olsUpperData.length > 0) {
-            state.f7OlsUpperSeries.update(f7Lines.olsUpperData[f7Lines.olsUpperData.length - 1]);
-            state.f7OlsLowerSeries.update(f7Lines.olsLowerData[f7Lines.olsLowerData.length - 1]);
-            state.f7Pos24LongSeries.update(f7Lines.pos24LongData[f7Lines.pos24LongData.length - 1]);
-            state.f7Pos24ShortSeries.update(f7Lines.pos24ShortData[f7Lines.pos24ShortData.length - 1]);
-        }
-        if (f7Lines.volThreshData.length > 0 && state.f7VolThreshSeries) {
-            state.f7VolThreshSeries.update(f7Lines.volThreshData[f7Lines.volThreshData.length - 1]);
+        const f13Lines = calculateFork13SeriesData(data, mtf1h);
+        if (f13Lines.olsUpperData.length > 0) {
+            state.f13OlsUpperSeries.update(f13Lines.olsUpperData[f13Lines.olsUpperData.length - 1]);
+            state.f13OlsLowerSeries.update(f13Lines.olsLowerData[f13Lines.olsLowerData.length - 1]);
         }
     }
 
@@ -746,45 +738,25 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
     state.vwapUpperSeries = state.chart.addLineSeries({ color: '#f43f5e', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: '+2.0σ', crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-vwap')?.checked });
     state.vwapLowerSeries = state.chart.addLineSeries({ color: '#10b981', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: '-2.0σ', crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false, visible: document.getElementById('toggle-vwap')?.checked });
 
-    // Fork 7 (Candidate 3-EG) Lines (OLS Bands & pos24 Thresholds)
-    const isFork7Checked = document.getElementById('toggle-fork7')?.checked ?? true;
-    state.f7OlsUpperSeries = state.chart.addLineSeries({
-        color: '#c084fc',
-        lineWidth: 2,
-        title: 'F7 OLS +2.0σ',
-        crosshairMarkerVisible: true,
-        lastValueVisible: true,
-        priceLineVisible: true,
-        visible: isFork7Checked
-    });
-    state.f7OlsLowerSeries = state.chart.addLineSeries({
-        color: '#c084fc',
-        lineWidth: 2,
-        title: 'F7 OLS -2.0σ',
-        crosshairMarkerVisible: true,
-        lastValueVisible: true,
-        priceLineVisible: true,
-        visible: isFork7Checked
-    });
-    state.f7Pos24LongSeries = state.chart.addLineSeries({
-        color: '#34d399',
-        lineWidth: 1.5,
+    // Fork 13 Trinity v2 Lines (OLS Bands)
+    const isFork13Checked = document.getElementById('toggle-fork13')?.checked ?? true;
+    state.f13OlsUpperSeries = state.chart.addLineSeries({
+        color: 'rgba(56, 189, 248, 0.75)',
+        lineWidth: 1,
         lineStyle: LightweightCharts.LineStyle.Dashed,
-        title: 'F7 pos24 LONG (0.67)',
-        crosshairMarkerVisible: true,
-        lastValueVisible: true,
-        priceLineVisible: true,
-        visible: isFork7Checked
+        title: 'F13 OLS +2.0σ',
+        lastValueVisible: false,
+        priceLineVisible: false,
+        visible: isFork13Checked
     });
-    state.f7Pos24ShortSeries = state.chart.addLineSeries({
-        color: '#f87171',
-        lineWidth: 1.5,
+    state.f13OlsLowerSeries = state.chart.addLineSeries({
+        color: 'rgba(244, 114, 182, 0.75)',
+        lineWidth: 1,
         lineStyle: LightweightCharts.LineStyle.Dashed,
-        title: 'F7 pos24 SHORT (0.33)',
-        crosshairMarkerVisible: true,
-        lastValueVisible: true,
-        priceLineVisible: true,
-        visible: isFork7Checked
+        title: 'F13 OLS -2.0σ',
+        lastValueVisible: false,
+        priceLineVisible: false,
+        visible: isFork13Checked
     });
 
     // Invisible floating offset series for spacing out V-Climax markers comfortably from candles
@@ -916,16 +888,7 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
         });
         state.volMaSeries = state.volChart.addLineSeries({ color: '#38bdf8', lineWidth: 1.5, title: 'Vol MA30', crosshairMarkerVisible: true });
         state.volSurgeThreshSeries = state.volChart.addLineSeries({ color: '#f59e0b', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, title: 'Surge (1.8x)', crosshairMarkerVisible: true });
-        state.f7VolThreshSeries = state.volChart.addLineSeries({
-            color: '#ec4899',
-            lineWidth: 1.5,
-            lineStyle: LightweightCharts.LineStyle.Dashed,
-            title: 'F7 Node G Vol (5.0σ)',
-            crosshairMarkerVisible: true,
-            lastValueVisible: true,
-            priceLineVisible: true,
-            visible: isFork7Checked
-        });
+
     }
 
     // Initialize Fork 9 Overlap Sub Chart

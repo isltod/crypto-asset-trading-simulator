@@ -355,15 +355,12 @@ async function updateConfig() {
                 toggleEB.checked = true;
                 saveUIConfig();
             }
-        } else if (state.signalType === 'fork7_candidate3') {
-            const toggleFork7 = document.getElementById('toggle-fork7');
-            if (toggleFork7 && !toggleFork7.checked) {
-                toggleFork7.checked = true;
-                if (state.f7OlsUpperSeries) state.f7OlsUpperSeries.applyOptions({ visible: true });
-                if (state.f7OlsLowerSeries) state.f7OlsLowerSeries.applyOptions({ visible: true });
-                if (state.f7Pos24LongSeries) state.f7Pos24LongSeries.applyOptions({ visible: true });
-                if (state.f7Pos24ShortSeries) state.f7Pos24ShortSeries.applyOptions({ visible: true });
-                if (state.f7VolThreshSeries) state.f7VolThreshSeries.applyOptions({ visible: true });
+        } else if (state.signalType === 'fork13_trinity_v2') {
+            const toggleFork13 = document.getElementById('toggle-fork13');
+            if (toggleFork13 && !toggleFork13.checked) {
+                toggleFork13.checked = true;
+                if (state.f13OlsUpperSeries) state.f13OlsUpperSeries.applyOptions({ visible: true });
+                if (state.f13OlsLowerSeries) state.f13OlsLowerSeries.applyOptions({ visible: true });
                 saveUIConfig();
             }
         }
@@ -406,7 +403,7 @@ function saveUIConfig() {
         wtAllowRepaint: document.getElementById('wt-allow-repaint')?.checked || false,
         wtIgnoreObos: document.getElementById('wt-ignore-obos')?.checked || false,
         showExtremeBreakout: document.getElementById('toggle-extreme-breakout')?.checked ?? true,
-        showFork7: document.getElementById('toggle-fork7')?.checked ?? true,
+        showFork13: document.getElementById('toggle-fork13')?.checked ?? true,
         showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
         supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
         supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0'),
@@ -499,13 +496,10 @@ function loadUIConfig() {
             if (typeof config.showExtremeBreakout === 'boolean' && document.getElementById('toggle-extreme-breakout')) {
                 document.getElementById('toggle-extreme-breakout').checked = config.showExtremeBreakout;
             }
-            if (typeof config.showFork7 === 'boolean' && document.getElementById('toggle-fork7')) {
-                document.getElementById('toggle-fork7').checked = config.showFork7;
-                if (state.f7OlsUpperSeries) state.f7OlsUpperSeries.applyOptions({ visible: config.showFork7 });
-                if (state.f7OlsLowerSeries) state.f7OlsLowerSeries.applyOptions({ visible: config.showFork7 });
-                if (state.f7Pos24LongSeries) state.f7Pos24LongSeries.applyOptions({ visible: config.showFork7 });
-                if (state.f7Pos24ShortSeries) state.f7Pos24ShortSeries.applyOptions({ visible: config.showFork7 });
-                if (state.f7VolThreshSeries) state.f7VolThreshSeries.applyOptions({ visible: config.showFork7 });
+            if (typeof config.showFork13 === 'boolean' && document.getElementById('toggle-fork13')) {
+                document.getElementById('toggle-fork13').checked = config.showFork13;
+                if (state.f13OlsUpperSeries) state.f13OlsUpperSeries.applyOptions({ visible: config.showFork13 });
+                if (state.f13OlsLowerSeries) state.f13OlsLowerSeries.applyOptions({ visible: config.showFork13 });
             }
             if (typeof config.showSupertrend === 'boolean' && document.getElementById('toggle-supertrend')) {
                 document.getElementById('toggle-supertrend').checked = config.showSupertrend;
@@ -724,17 +718,12 @@ async function init() {
                 if (toggleEB && !toggleEB.checked) {
                     toggleEB.checked = true;
                 }
-            } else if (state.signalType === 'fork7_candidate3') {
-                const toggleFork7 = document.getElementById('toggle-fork7');
-                if (toggleFork7 && !toggleFork7.checked) {
-                    toggleFork7.checked = true;
+            } else if (state.signalType === 'fork13_trinity_v2') {
+                const toggleFork13 = document.getElementById('toggle-fork13');
+                if (toggleFork13 && !toggleFork13.checked) {
+                    toggleFork13.checked = true;
                 }
-                const toggleVol = document.getElementById('toggle-vol');
-                if (toggleVol && !toggleVol.checked) {
-                    toggleVol.checked = true;
-                    updateVolVisibility();
-                }
-                updateFork7Visibility();
+                updateFork13Visibility();
             } else if (state.signalType === 'fork9_dual_firewall_ov34' || state.signalType === 'fork9_dual_firewall_ov28') {
                 const toggleOverlap = document.getElementById('toggle-overlap');
                 if (toggleOverlap && !toggleOverlap.checked) {
@@ -1035,19 +1024,16 @@ async function init() {
         applyIndicatorMarkers();
     });
 
-    // Fork 7 bindings
-    const toggleFork7 = document.getElementById('toggle-fork7');
-    function updateFork7Visibility() {
-        const isVisible = toggleFork7 ? toggleFork7.checked : false;
-        if (state.f7OlsUpperSeries) state.f7OlsUpperSeries.applyOptions({ visible: isVisible });
-        if (state.f7OlsLowerSeries) state.f7OlsLowerSeries.applyOptions({ visible: isVisible });
-        if (state.f7Pos24LongSeries) state.f7Pos24LongSeries.applyOptions({ visible: isVisible });
-        if (state.f7Pos24ShortSeries) state.f7Pos24ShortSeries.applyOptions({ visible: isVisible });
-        if (state.f7VolThreshSeries) state.f7VolThreshSeries.applyOptions({ visible: isVisible });
+    // Fork 13 bindings
+    const toggleFork13 = document.getElementById('toggle-fork13');
+    function updateFork13Visibility() {
+        const isVisible = toggleFork13 ? toggleFork13.checked : false;
+        if (state.f13OlsUpperSeries) state.f13OlsUpperSeries.applyOptions({ visible: isVisible });
+        if (state.f13OlsLowerSeries) state.f13OlsLowerSeries.applyOptions({ visible: isVisible });
         saveUIConfig();
         applyIndicatorMarkers();
     }
-    toggleFork7?.addEventListener('change', updateFork7Visibility);
+    toggleFork13?.addEventListener('change', updateFork13Visibility);
 
     const bindVParamInput = (id, isFloat = false, minVal = 0.1) => {
         const input = document.getElementById(id);
@@ -1356,7 +1342,7 @@ async function init() {
     updateSupertrendVisibility();
     updateVWAPVisibility();
     updateVolVisibility();
-    updateFork7Visibility();
+    updateFork13Visibility();
     updateOverlapVisibility();
 }
 
