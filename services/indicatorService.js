@@ -351,24 +351,23 @@ function calculateExtremeBreakout(klines) {
     return currentSig === 1 ? 'LONG' : 'SHORT';
 }
 
-function calculateFork7Candidate3(klines) {
-    if (!klines || klines.length < 1440) return 'HOLD';
+function calculateFork13Trinity(klines, currentPosSide = null) {
+    if (!klines || klines.length < 1441) return { signal: 'HOLD', reason: 'INSUFFICIENT_DATA' };
 
     const len = klines.length;
     const currentTick = klines[len - 1];
     const prevTick = klines[len - 2];
+    const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
 
-    // 1. Group klines into hourly bars to get 24-hour OLS Regression
+    // 1. Group klines into completed hourly bars
     const hourlyBars = [];
     let curHKey = null;
     let hHigh = -Infinity, hLow = Infinity, hiMin = 0, loMin = 0;
 
-    const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
-
     for (let i = 0; i < len; i++) {
         const k = klines[i];
         const hKey = Math.floor(k.time / 3600) * 3600;
-        if (hKey === currentHourKey) continue; // Only take completed hours before current hour
+        if (hKey === currentHourKey) continue; // completed hours only
 
         if (curHKey === null || hKey !== curHKey) {
             if (curHKey !== null) {
@@ -395,10 +394,10 @@ function calculateFork7Candidate3(klines) {
         hourlyBars.push({ hKey: curHKey, high: hHigh, low: hLow, hiMin, loMin });
     }
 
-    if (hourlyBars.length < 24) return 'HOLD';
+    if (hourlyBars.length < 24) return { signal: 'HOLD', reason: 'NEED_24_HOURS' };
     const last24Hours = hourlyBars.slice(-24);
 
-    // OLS Linear Regression for Highs and Lows over 24 hours
+    // 2. 24h OLS Regression on Highs and Lows
     let sumX_hi = 0, sumY_hi = 0, sumX_lo = 0, sumY_lo = 0;
     const ptsHi = [], ptsLo = [];
     for (let i = 0; i < 24; i++) {
@@ -437,31 +436,24 @@ function calculateFork7Candidate3(klines) {
     const sigma_hi = Math.sqrt(resSum_hi / 22) + 1e-9;
     const sigma_lo = Math.sqrt(resSum_lo / 22) + 1e-9;
 
-    // Current bar minute in hour
     const curMin = Math.floor((currentTick.time % 3600) / 60);
-    const xx_curr = 24 + curMin / 60.0;
-    const pred_hi_curr = A0 + A1 * xx_curr;
-    const pred_lo_curr = B0 + B1 * xx_curr;
-    const zU_curr = (currentTick.close - pred_hi_curr) / sigma_hi;
-    const zL_curr = (pred_lo_curr - currentTick.close) / sigma_lo;
+    function getBandAtOffset(minuteOffset, price) {
+        const x = 24.0 + (curMin + minuteOffset) / 60.0;
+        const upper = A0 + A1 * x;
+        const lower = B0 + B1 * x;
+        const zU = (price - upper) / sigma_hi;
+        const zL = (lower - price) / sigma_lo;
+        const bw = (upper - lower) / price * 100.0;
+        return { upper, lower, zU, zL, bw };
+    }
 
-    // Prev bar minute in hour
-    const prevMin = Math.floor((prevTick.time % 3600) / 60);
-    const xx_prev = (Math.floor(prevTick.time / 3600) * 3600 === currentHourKey ? 24 : 23) + prevMin / 60.0;
-    const pred_hi_prev = A0 + A1 * xx_prev;
-    const pred_lo_prev = B0 + B1 * xx_prev;
-    const zU_prev = (prevTick.close - pred_hi_prev) / sigma_hi;
-    const zL_prev = (pred_lo_prev - prevTick.close) / sigma_lo;
+    const bandCurr = getBandAtOffset(0, currentTick.close);
+    const bandM3 = getBandAtOffset(-3, klines[len - 4] ? klines[len - 4].close : currentTick.close);
+    const bandM60 = getBandAtOffset(-60, klines[len - 61] ? klines[len - 61].close : currentTick.close);
 
-    // 2. Node E Detection (Band 2.0 sigma transition)
-    let sigE = 0;
-    if (zU_prev < 2.0 && zU_curr >= 2.0) sigE = 1;
-    else if (zL_prev < 2.0 && zL_curr >= 2.0) sigE = -1;
-
-    // 3. Node G Detection (1m volatility / volume explosion)
-    const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
-    const lookback = Math.min(len - 1, 1440);
+    // 3. Realized 24h Volatility (past 1440 1m log returns)
     let sum_lr = 0, sum_sq_lr = 0;
+    const lookback = 1440;
     const vols = [];
     for (let j = len - lookback; j < len; j++) {
         const lr = Math.log(klines[j].close / (klines[j - 1].close + 1e-9));
@@ -472,9 +464,29 @@ function calculateFork7Candidate3(klines) {
     const mean_lr = sum_lr / lookback;
     const var_lr = Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr);
     const std_lr = Math.sqrt(var_lr);
+    const vol_24h = std_lr * Math.sqrt(1440) * 100.0;
+
+    // 4. Climax Take-Profit check for SHORT
+    if (currentPosSide === 'SHORT') {
+        if (bandCurr.zL >= 4.0 && vol_24h >= 2.5) {
+            console.log(`[Fork 13] SHORT Climax Take-Profit Triggered! zL=${bandCurr.zL.toFixed(2)} >= 4.0, vol_24h=${vol_24h.toFixed(2)}% >= 2.5%`);
+            return {
+                signal: 'FLAT',
+                action: 'CLIMAX_TP',
+                reason: 'CLIMAX_TAKE_PROFIT',
+                size: 1.0,
+                bw: bandCurr.bw,
+                zU: bandCurr.zU,
+                zL: bandCurr.zL,
+                vol_24h
+            };
+        }
+    }
+
+    // 5. Node G Detection at current bar
+    const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
     const z_ret = (lr_curr - mean_lr) / std_lr;
 
-    // Median and MAD of volume
     vols.sort((a, b) => a - b);
     const midIdx = Math.floor(vols.length / 2);
     const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
@@ -482,35 +494,125 @@ function calculateFork7Candidate3(klines) {
     const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
     const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
 
-    let sigG = 0;
-    if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0) {
-        if (lr_curr > 0 && zU_curr >= 1.0) sigG = 1;
-        else if (lr_curr < 0 && zL_curr >= 1.0) sigG = -1;
+    const zb_curr_g = lr_curr >= 0 ? bandCurr.zU : bandCurr.zL;
+    const isNodeGFired = Math.abs(z_ret) >= 4.0 && z_vol >= 5.0 && zb_curr_g >= 1.0;
+    const dirG = lr_curr >= 0 ? 1 : -1;
+
+    // 6. Node C Detection at current bar (15m momentum)
+    const t0 = len - 1;
+    const t15 = len - 16;
+    const ret15 = (currentTick.close - klines[t15].close) / klines[t15].close * 100.0;
+    let vol15Sum = 0;
+    let diff1mSum = 0;
+    for (let j = t15 + 1; j <= t0; j++) {
+        vol15Sum += klines[j].volume || 0;
+        diff1mSum += Math.abs(klines[j].close - klines[j - 1].close);
+    }
+    const meanVol24h = vols.reduce((a, b) => a + b, 0) / lookback;
+    const vol15Ratio = vol15Sum / (meanVol24h * 15.0 + 1e-12);
+    const er15 = Math.abs(currentTick.close - klines[t15].close) / (diff1mSum + 1e-9);
+
+    const isNodeCFired = Math.abs(ret15) >= 0.7 && vol15Ratio >= 2.5 && er15 >= 0.45;
+    const dirC = ret15 >= 0 ? 1 : -1;
+
+    // Segment start checks
+    function checkNodeGSegmentStart() {
+        if (!isNodeGFired) return false;
+        for (let p = len - 2; p >= Math.max(1440, len - 180); p--) {
+            const p_lr = Math.log(klines[p].close / (klines[p - 1].close + 1e-9));
+            const p_zret = (p_lr - mean_lr) / std_lr;
+            const p_zvol = ((klines[p].volume || 0) - med_vol) / mad_vol;
+            const p_band = getBandAtOffset(p - (len - 1), klines[p].close);
+            const p_zb = p_lr >= 0 ? p_band.zU : p_band.zL;
+            if (Math.abs(p_zret) >= 4.0 && p_zvol >= 5.0 && p_zb >= 1.0) {
+                const p_dir = p_lr >= 0 ? 1 : -1;
+                return p_dir !== dirG;
+            }
+        }
+        return true;
     }
 
-    // Combine E and G (E takes priority)
-    const rawSig = sigE !== 0 ? sigE : sigG;
-    if (rawSig === 0) return 'HOLD';
-
-    // 4. pos24 Filter check
-    let hi24 = -Infinity, lo24 = Infinity;
-    for (let j = len - lookback; j < len; j++) {
-        if (klines[j].high > hi24) hi24 = klines[j].high;
-        if (klines[j].low < lo24) lo24 = klines[j].low;
-    }
-    const range24 = Math.max(1e-9, hi24 - lo24);
-    const pos24 = rawSig === 1 
-        ? (currentTick.close - lo24) / range24 
-        : (hi24 - currentTick.close) / range24;
-
-    // Upper 1/3 threshold requirement (pos24 >= 0.67)
-    if (pos24 < 0.67) {
-        console.log(`[Fork 7] ${rawSig === 1 ? 'LONG' : 'SHORT'} (Node ${sigE !== 0 ? 'E' : 'G'}) pos24=${pos24.toFixed(3)} < 0.67. Filtered out.`);
-        return 'HOLD';
+    function checkNodeCSegmentStart() {
+        if (!isNodeCFired) return false;
+        for (let p = len - 2; p >= Math.max(1440, len - 180); p--) {
+            const p_ret15 = (klines[p].close - klines[p - 15].close) / klines[p - 15].close * 100.0;
+            let p_vol15 = 0, p_diff = 0;
+            for (let j = p - 14; j <= p; j++) {
+                p_vol15 += klines[j].volume || 0;
+                p_diff += Math.abs(klines[j].close - klines[j - 1].close);
+            }
+            const p_volRatio = p_vol15 / (meanVol24h * 15.0 + 1e-12);
+            const p_er15 = Math.abs(klines[p].close - klines[p - 15].close) / (p_diff + 1e-9);
+            if (Math.abs(p_ret15) >= 0.7 && p_volRatio >= 2.5 && p_er15 >= 0.45) {
+                const p_dir = p_ret15 >= 0 ? 1 : -1;
+                return p_dir !== dirC;
+            }
+        }
+        return true;
     }
 
-    console.log(`[Fork 7] Signal APPROVED: ${rawSig === 1 ? 'LONG' : 'SHORT'} via Node ${sigE !== 0 ? 'E' : 'G'}. pos24=${pos24.toFixed(3)}, zU=${zU_curr.toFixed(2)}, zL=${zL_curr.toFixed(2)}`);
-    return rawSig === 1 ? 'LONG' : 'SHORT';
+    const isGSegStart = checkNodeGSegmentStart();
+    const isCSegStart = checkNodeCSegmentStart();
+
+    // 7. Trinity Signal Rules
+    const signals = [];
+    const bw = bandCurr.bw;
+
+    // A. G_BASE: Normal band [0.40, 0.64] & t-3 already outside band (zb >= 0)
+    if (isGSegStart) {
+        const normal = bw >= 0.40 && bw <= 0.64;
+        const zb_m3 = dirG === 1 ? bandM3.zU : bandM3.zL;
+        if (normal && zb_m3 >= 0.0) {
+            signals.push({ dir: dirG, type: 'G_BASE' });
+        }
+
+        // B. G_REV_LONG: Expansion band (>0.64) & Short & t-3 trapped inside band (zL < 0)
+        const wide = bw > 0.64;
+        if (wide && dirG === -1 && bandM3.zL < 0.0) {
+            signals.push({ dir: 1, type: 'G_REV_LONG' });
+        }
+    }
+
+    // C. C_BASE: Squeeze (<0.40) with zb >= 2.0 OR Expansion (>0.64) with t-60 outside band (zb >= 0)
+    if (isCSegStart) {
+        const squeeze = bw < 0.40 && (dirC === 1 ? bandCurr.zU : bandCurr.zL) >= 2.0;
+        const trend = bw > 0.64 && (dirC === 1 ? bandM60.zU : bandM60.zL) >= 0.0;
+        if (squeeze || trend) {
+            signals.push({ dir: dirC, type: 'C_BASE' });
+        }
+    }
+
+    if (signals.length === 0) {
+        return { signal: 'HOLD', bw, zU: bandCurr.zU, zL: bandCurr.zL, vol_24h };
+    }
+
+    // Collision check: if directions conflict, discard all
+    const dirs = new Set(signals.map(s => s.dir));
+    if (dirs.size > 1) {
+        console.log(`[Fork 13] Signal COLLISION discarded! Directions: ${[...dirs].join(', ')}`);
+        return { signal: 'HOLD', reason: 'COLLISION_DISCARD', bw, vol_24h };
+    }
+
+    // Priority: G_BASE > C_BASE > G_REV_LONG
+    const priority = { 'G_BASE': 1, 'C_BASE': 2, 'G_REV_LONG': 3 };
+    signals.sort((a, b) => priority[a.type] - priority[b.type]);
+    const chosen = signals[0];
+
+    // Volatility Sizing: target_vol ~ 2.2% (Train/Validation 30d median benchmark)
+    const target_vol = 2.2;
+    const size = Math.min(1.0, Math.max(0.4, target_vol / vol_24h));
+
+    console.log(`[Fork 13] Signal APPROVED: ${chosen.dir === 1 ? 'LONG' : 'SHORT'} via ${chosen.type}. Size=${size.toFixed(2)}, BW=${bw.toFixed(3)}%, Vol24h=${vol_24h.toFixed(2)}%`);
+
+    return {
+        signal: chosen.dir === 1 ? 'LONG' : 'SHORT',
+        signalType: chosen.type,
+        size: parseFloat(size.toFixed(2)),
+        bw,
+        zU: bandCurr.zU,
+        zL: bandCurr.zL,
+        vol_24h
+    };
 }
 
 module.exports = {
@@ -522,7 +624,7 @@ module.exports = {
     calculateStochRSI,
     calculateVWAPClimax,
     calculateExtremeBreakout,
-    calculateFork7Candidate3,
+    calculateFork13Trinity,
     calculateFork9DualFirewall,
     calculateFork9DualFirewallOV34: (klines) => calculateFork9DualFirewall(klines, 0.34, true),
     calculateFork9DualFirewallOV28: (klines) => calculateFork9DualFirewall(klines, 0.28, true)

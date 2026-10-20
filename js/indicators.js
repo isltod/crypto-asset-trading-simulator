@@ -796,7 +796,7 @@ export function calculateVolumeBarData(formattedData) {
     return volBars;
 }
 
-function buildFork7Context(formattedData, mtf1h = null) {
+function buildFork13Context(formattedData, mtf1h = null) {
     const len = formattedData.length;
     const hourlyBars = [];
     const hKeyToIdx = new Map();
@@ -813,7 +813,7 @@ function buildFork7Context(formattedData, mtf1h = null) {
                     hKey: hb.time,
                     high: hb.high,
                     low: hb.low,
-                    hiMin: 30, // midpoint fallback for pre-loaded 1h bars
+                    hiMin: 30,
                     loMin: 30
                 });
             }
@@ -920,27 +920,19 @@ function buildFork7Context(formattedData, mtf1h = null) {
     return { getOLS };
 }
 
-export function calculateFork7SeriesData(formattedData, mtf1h = null) {
+export function calculateFork13SeriesData(formattedData, mtf1h = null) {
     if (!formattedData || formattedData.length === 0) {
         return {
             olsUpperData: [],
-            olsLowerData: [],
-            pos24LongData: [],
-            pos24ShortData: [],
-            volThreshData: []
+            olsLowerData: []
         };
     }
 
-    const { getOLS } = buildFork7Context(formattedData, mtf1h);
+    const { getOLS } = buildFork13Context(formattedData, mtf1h);
     const len = formattedData.length;
 
     const olsUpperData = [];
     const olsLowerData = [];
-    const pos24LongData = [];
-    const pos24ShortData = [];
-    const volThreshData = [];
-
-    let lastVolThresh = 0;
 
     for (let i = 0; i < len; i++) {
         const tick = formattedData[i];
@@ -955,67 +947,38 @@ export function calculateFork7SeriesData(formattedData, mtf1h = null) {
             olsUpperData.push({ time: tick.time, value: pred_hi + 2.0 * model.sigma_hi });
             olsLowerData.push({ time: tick.time, value: pred_lo - 2.0 * model.sigma_lo });
         }
-
-        // pos24 bounds
-        let hi24 = -Infinity, lo24 = Infinity;
-        const startIdx = Math.max(0, i - 1439);
-        for (let j = startIdx; j <= i; j++) {
-            if (formattedData[j].high > hi24) hi24 = formattedData[j].high;
-            if (formattedData[j].low < lo24) lo24 = formattedData[j].low;
-        }
-        if (i < 1439 && mtf1h && mtf1h.length > 0) {
-            const targetStartTime = formattedData[i].time - 86400;
-            for (let k = mtf1h.length - 1; k >= 0; k--) {
-                const hb = mtf1h[k];
-                if (hb.time + 3600 <= targetStartTime) break;
-                if (hb.time < formattedData[0].time) {
-                    if (hb.high > hi24) hi24 = hb.high;
-                    if (hb.low < lo24) lo24 = hb.low;
-                }
-            }
-        }
-        const range24 = Math.max(1e-9, hi24 - lo24);
-        pos24LongData.push({ time: tick.time, value: lo24 + 0.67 * range24 });
-        pos24ShortData.push({ time: tick.time, value: lo24 + 0.33 * range24 });
-
-        // Node G Volume threshold (5.0σ MAD)
-        if (i % 5 === 0 || lastVolThresh === 0) {
-            const lookback = Math.min(i, 1440);
-            if (lookback >= 15) {
-                const vols = [];
-                for (let j = i - lookback + 1; j <= i; j++) vols.push(formattedData[j].volume || 0);
-                vols.sort((a, b) => a - b);
-                const midIdx = Math.floor(vols.length / 2);
-                const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
-                const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
-                const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
-                lastVolThresh = med_vol + 5.0 * mad_vol;
-            }
-        }
-        if (lastVolThresh > 0) {
-            volThreshData.push({ time: tick.time, value: lastVolThresh });
-        }
     }
 
     return {
         olsUpperData,
-        olsLowerData,
-        pos24LongData,
-        pos24ShortData,
-        volThreshData
+        olsLowerData
     };
 }
 
-export function calculateFork7Candidate3Markers(formattedData, mtf1h = null) {
-    if (!formattedData || formattedData.length < 2) return [];
+export function calculateFork13TrinityMarkers(formattedData, mtf1h = null) {
+    if (!formattedData || formattedData.length < 1441) return [];
     const len = formattedData.length;
-
-    const { getOLS } = buildFork7Context(formattedData, mtf1h);
-
+    const { getOLS } = buildFork13Context(formattedData, mtf1h);
     const markers = [];
-    let cooldownUntilIdx = -1;
 
-    for (let i = 1; i < len; i++) {
+    let lastNodeG = null; // { idx, dir }
+    let lastNodeC = null; // { idx, dir }
+
+    // Rolling statistics caches
+    let sum_lr = 0, sum_sq_lr = 0;
+    const vols = [];
+
+    // Prepopulate first 1440 bars
+    for (let j = 0; j < 1440; j++) {
+        vols.push(formattedData[j].volume || 0);
+        if (j > 0) {
+            const lr = Math.log(formattedData[j].close / (formattedData[j - 1].close + 1e-9));
+            sum_lr += lr;
+            sum_sq_lr += lr * lr;
+        }
+    }
+
+    for (let i = 1440; i < len; i++) {
         const currentTick = formattedData[i];
         const prevTick = formattedData[i - 1];
         const currentHourKey = Math.floor(currentTick.time / 3600) * 3600;
@@ -1024,119 +987,128 @@ export function calculateFork7Candidate3Markers(formattedData, mtf1h = null) {
         if (!model) continue;
 
         const curMin = Math.floor((currentTick.time % 3600) / 60);
-        const xx_curr = 24 + curMin / 60.0;
-        const pred_hi_curr = model.A0 + model.A1 * xx_curr;
-        const pred_lo_curr = model.B0 + model.B1 * xx_curr;
-        const zU_curr = (currentTick.close - pred_hi_curr) / model.sigma_hi;
-        const zL_curr = (pred_lo_curr - currentTick.close) / model.sigma_lo;
+        function evalBand(minuteOffset, price) {
+            const x = 24.0 + (curMin + minuteOffset) / 60.0;
+            const upper = model.A0 + model.A1 * x;
+            const lower = model.B0 + model.B1 * x;
+            const zU = (price - upper) / model.sigma_hi;
+            const zL = (lower - price) / model.sigma_lo;
+            const bw = (upper - lower) / price * 100.0;
+            return { upper, lower, zU, zL, bw };
+        }
 
-        const prevMin = Math.floor((prevTick.time % 3600) / 60);
-        const xx_prev = (Math.floor(prevTick.time / 3600) * 3600 === currentHourKey ? 24 : 23) + prevMin / 60.0;
-        const pred_hi_prev = model.A0 + model.A1 * xx_prev;
-        const pred_lo_prev = model.B0 + model.B1 * xx_prev;
-        const zU_prev = (prevTick.close - pred_hi_prev) / model.sigma_hi;
-        const zL_prev = (pred_lo_prev - prevTick.close) / model.sigma_lo;
+        const bandCurr = evalBand(0, currentTick.close);
+        const bandM3 = evalBand(-3, formattedData[i - 3] ? formattedData[i - 3].close : currentTick.close);
+        const bandM60 = evalBand(-60, formattedData[i - 60] ? formattedData[i - 60].close : currentTick.close);
 
-        // Node E Detection
-        let sigE = 0;
-        if (zU_prev < 2.0 && zU_curr >= 2.0) sigE = 1;
-        else if (zL_prev < 2.0 && zL_curr >= 2.0) sigE = -1;
-
-        // Node G Detection
-        let sigG = 0;
+        // Update rolling 1440 metrics
         const lr_curr = Math.log(currentTick.close / (prevTick.close + 1e-9));
-        if (Math.abs(lr_curr) >= 0.003 && i >= 15) {
-            const lookback = Math.min(i, 1440);
-            let sum_lr = 0, sum_sq_lr = 0;
-            const vols = [];
-            for (let j = i - lookback + 1; j <= i; j++) {
-                const lr = Math.log(formattedData[j].close / (formattedData[j - 1].close + 1e-9));
-                sum_lr += lr;
-                sum_sq_lr += lr * lr;
-                vols.push(formattedData[j].volume || 0);
-            }
-            const mean_lr = sum_lr / lookback;
-            const var_lr = Math.max(1e-12, sum_sq_lr / lookback - mean_lr * mean_lr);
-            const std_lr = Math.sqrt(var_lr);
-            const z_ret = (lr_curr - mean_lr) / std_lr;
+        sum_lr += lr_curr;
+        sum_sq_lr += lr_curr * lr_curr;
+        vols.push(currentTick.volume || 0);
 
-            vols.sort((a, b) => a - b);
-            const midIdx = Math.floor(vols.length / 2);
-            const med_vol = vols.length % 2 === 0 ? (vols[midIdx - 1] + vols[midIdx]) / 2 : vols[midIdx];
-            const devVols = vols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
+        const old_lr = Math.log(formattedData[i - 1440 + 1].close / (formattedData[i - 1440].close + 1e-9));
+        sum_lr -= old_lr;
+        sum_sq_lr -= old_lr * old_lr;
+        vols.shift();
+
+        const mean_lr = sum_lr / 1440;
+        const var_lr = Math.max(1e-12, sum_sq_lr / 1440 - mean_lr * mean_lr);
+        const std_lr = Math.sqrt(var_lr);
+        const vol_24h = std_lr * Math.sqrt(1440) * 100.0;
+
+        // Check Climax TP marker
+        if (bandCurr.zL >= 4.0 && vol_24h >= 2.5) {
+            markers.push({
+                time: currentTick.time,
+                position: 'aboveBar',
+                color: '#a855f7', // Purple
+                shape: 'circle',
+                text: 'F13 Climax-TP',
+                size: 1.2
+            });
+        }
+
+        // Node G
+        const z_ret = (lr_curr - mean_lr) / std_lr;
+        if (Math.abs(z_ret) >= 4.0 && bandCurr.bw >= 0.20) {
+            const sortedVols = [...vols].sort((a, b) => a - b);
+            const midIdx = Math.floor(sortedVols.length / 2);
+            const med_vol = sortedVols.length % 2 === 0 ? (sortedVols[midIdx - 1] + sortedVols[midIdx]) / 2 : sortedVols[midIdx];
+            const devVols = sortedVols.map(v => Math.abs(v - med_vol)).sort((a, b) => a - b);
             const mad_vol = (devVols.length % 2 === 0 ? (devVols[midIdx - 1] + devVols[midIdx]) / 2 : devVols[midIdx]) * 1.4826 + 1e-9;
             const z_vol = ((currentTick.volume || 0) - med_vol) / mad_vol;
+            const zb_curr_g = lr_curr >= 0 ? bandCurr.zU : bandCurr.zL;
 
-            if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0) {
-                if (lr_curr > 0 && zU_curr >= 1.0) sigG = 1;
-                else if (lr_curr < 0 && zL_curr >= 1.0) sigG = -1;
-            }
-        }
+            if (Math.abs(z_ret) >= 4.0 && z_vol >= 5.0 && zb_curr_g >= 1.0) {
+                const dirG = lr_curr >= 0 ? 1 : -1;
+                const isGSegStart = !lastNodeG || lastNodeG.dir !== dirG;
+                lastNodeG = { idx: i, dir: dirG };
 
-        const rawSig = sigE !== 0 ? sigE : sigG;
-        if (rawSig === 0) continue;
+                if (isGSegStart) {
+                    const normal = bandCurr.bw >= 0.40 && bandCurr.bw <= 0.64;
+                    const zb_m3 = dirG === 1 ? bandM3.zU : bandM3.zL;
+                    if (normal && zb_m3 >= 0.0) {
+                        markers.push({
+                            time: currentTick.time,
+                            position: dirG === 1 ? 'belowBar' : 'aboveBar',
+                            color: dirG === 1 ? '#10b981' : '#ef4444',
+                            shape: dirG === 1 ? 'arrowUp' : 'arrowDown',
+                            text: dirG === 1 ? 'F13 G-Long' : 'F13 G-Short',
+                            size: 1.2
+                        });
+                    }
 
-        // pos24 filter check
-        let hi24 = -Infinity, lo24 = Infinity;
-        const startIdx = Math.max(0, i - 1439);
-        for (let j = startIdx; j <= i; j++) {
-            if (formattedData[j].high > hi24) hi24 = formattedData[j].high;
-            if (formattedData[j].low < lo24) lo24 = formattedData[j].low;
-        }
-        if (i < 1439 && mtf1h && mtf1h.length > 0) {
-            const targetStartTime = formattedData[i].time - 86400;
-            for (let k = mtf1h.length - 1; k >= 0; k--) {
-                const hb = mtf1h[k];
-                if (hb.time + 3600 <= targetStartTime) break;
-                if (hb.time < formattedData[0].time) {
-                    if (hb.high > hi24) hi24 = hb.high;
-                    if (hb.low < lo24) lo24 = hb.low;
+                    // G_REV_LONG
+                    if (bandCurr.bw > 0.64 && dirG === -1 && bandM3.zL < 0.0) {
+                        markers.push({
+                            time: currentTick.time,
+                            position: 'belowBar',
+                            color: '#eab308', // Gold
+                            shape: 'arrowUp',
+                            text: 'F13 Rev-Long',
+                            size: 1.4
+                        });
+                    }
                 }
             }
         }
 
-        const range24 = Math.max(1e-9, hi24 - lo24);
-        const pos24 = rawSig === 1
-            ? (currentTick.close - lo24) / range24
-            : (hi24 - currentTick.close) / range24;
+        // Node C
+        if (i >= 15) {
+            const ret15 = (currentTick.close - formattedData[i - 15].close) / formattedData[i - 15].close * 100.0;
+            if (Math.abs(ret15) >= 0.7) {
+                let vol15Sum = 0, diff1mSum = 0;
+                for (let j = i - 14; j <= i; j++) {
+                    vol15Sum += formattedData[j].volume || 0;
+                    diff1mSum += Math.abs(formattedData[j].close - formattedData[j - 1].close);
+                }
+                const meanVol24h = vols.reduce((a, b) => a + b, 0) / 1440;
+                const vol15Ratio = vol15Sum / (meanVol24h * 15.0 + 1e-12);
+                const er15 = Math.abs(currentTick.close - formattedData[i - 15].close) / (diff1mSum + 1e-9);
 
-        // 1. pos24 Filter Rejection Sub-marker
-        if (pos24 < 0.67) {
-            markers.push({
-                time: currentTick.time,
-                position: rawSig === 1 ? 'belowBar' : 'aboveBar',
-                color: '#f59e0b', // Amber/orange circle
-                shape: 'circle',
-                text: `F7 Fltr (${(pos24 * 100).toFixed(0)}%)`,
-                size: 0.8
-            });
-            continue;
+                if (vol15Ratio >= 2.5 && er15 >= 0.45) {
+                    const dirC = ret15 >= 0 ? 1 : -1;
+                    const isCSegStart = !lastNodeC || lastNodeC.dir !== dirC;
+                    lastNodeC = { idx: i, dir: dirC };
+
+                    if (isCSegStart) {
+                        const squeeze = bandCurr.bw < 0.40 && (dirC === 1 ? bandCurr.zU : bandCurr.zL) >= 2.0;
+                        const trend = bandCurr.bw > 0.64 && (dirC === 1 ? bandM60.zU : bandM60.zL) >= 0.0;
+                        if (squeeze || trend) {
+                            markers.push({
+                                time: currentTick.time,
+                                position: dirC === 1 ? 'belowBar' : 'aboveBar',
+                                color: dirC === 1 ? '#06b6d4' : '#ec4899', // Cyan / Pink
+                                shape: dirC === 1 ? 'arrowUp' : 'arrowDown',
+                                text: dirC === 1 ? 'F13 C-Long' : 'F13 C-Short',
+                                size: 1.2
+                            });
+                        }
+                    }
+                }
+            }
         }
-
-        // 2. Cooldown Active Sub-marker
-        if (i < cooldownUntilIdx) {
-            markers.push({
-                time: currentTick.time,
-                position: rawSig === 1 ? 'belowBar' : 'aboveBar',
-                color: '#a855f7', // Purple circle
-                shape: 'circle',
-                text: 'F7 CD',
-                size: 0.8
-            });
-            continue;
-        }
-
-        // 3. Approved Entry Signal
-        markers.push({
-            time: currentTick.time,
-            position: rawSig === 1 ? 'belowBar' : 'aboveBar',
-            color: rawSig === 1 ? '#10b981' : '#f43f5e',
-            shape: rawSig === 1 ? 'arrowUp' : 'arrowDown',
-            text: rawSig === 1 ? `F7 LONG (${sigE !== 0 ? 'E' : 'G'})` : `F7 SHORT (${sigE !== 0 ? 'E' : 'G'})`,
-            size: 2
-        });
-
-        cooldownUntilIdx = i + 720;
     }
 
     return markers;
