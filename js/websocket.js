@@ -45,6 +45,9 @@ export function connectWebSocket(symbol, onAccountRefresh) {
                 state.klineData[state.klineData.length - 1] = tick;
             } else {
                 state.klineData.push(tick);
+                if (state.klineData.length > 5000) {
+                    state.klineData.shift();
+                }
             }
 
             updateIndicatorsLive(isNewBar);
