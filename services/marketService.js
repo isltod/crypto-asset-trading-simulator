@@ -26,26 +26,27 @@ function getJson(url) {
 }
 
 async function initKlineHistories() {
-    for (const rawSymbol of SYMBOLS_TO_STREAM) {
+    await Promise.all(SYMBOLS_TO_STREAM.map(async (rawSymbol) => {
         const symbol = rawSymbol.toUpperCase();
         klineHistoriesMTF[symbol] = {};
 
-        const url1 = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1m&limit=1000`;
-        try {
-            const data1 = await getJson(url1);
-            let combinedData = data1;
-            if (Array.isArray(data1) && data1.length >= 1000) {
-                const endTime = data1[0][0] - 1;
-                const url2 = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1m&limit=1000&endTime=${endTime}`;
-                try {
-                    const data2 = await getJson(url2);
-                    if (Array.isArray(data2)) {
-                        combinedData = data2.concat(data1);
-                    }
-                } catch (e2) {
-                    console.error(`[Init] Failed to load historical chunk 2 for ${symbol}:`, e2.message);
-                }
+        let combinedData = [];
+        let endTime = null;
+        for (let c = 0; c < 5; c++) {
+            let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1m&limit=1000`;
+            if (endTime) url += `&endTime=${endTime}`;
+            try {
+                const chunk = await getJson(url);
+                if (!Array.isArray(chunk) || chunk.length === 0) break;
+                combinedData = chunk.concat(combinedData);
+                endTime = chunk[0][0] - 1;
+            } catch (eChunk) {
+                console.error(`[Init] Failed to load 1m chunk ${c + 1} for ${symbol}:`, eChunk.message);
+                break;
             }
+        }
+
+        try {
             klineHistories[symbol] = combinedData.map(d => ({
                 time: Math.floor(d[0] / 1000),
                 open: parseFloat(d[1]),
@@ -78,7 +79,7 @@ async function initKlineHistories() {
                 klineHistoriesMTF[symbol][tf] = [];
             }
         }
-    }
+    }));
 }
 
 function updateKlineTick(symbol, message) {
@@ -102,7 +103,7 @@ function updateKlineTick(symbol, message) {
             history[lastIdx] = tick;
         } else {
             history.push(tick);
-            if (history.length > 2000) {
+            if (history.length > 5000) {
                 history.shift();
             }
         }
@@ -131,7 +132,7 @@ function updateKlineTick(symbol, message) {
                         close: tick.close,
                         volume: tickVolume
                     });
-                    if (mtfHistory.length > 500) {
+                    if (mtfHistory.length > 1000) {
                         mtfHistory.shift();
                     }
                 }
