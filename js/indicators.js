@@ -955,7 +955,7 @@ export function calculateFork13SeriesData(formattedData, mtf1h = null) {
     };
 }
 
-export function calculateFork13TrinityMarkers(formattedData, mtf1h = null) {
+export function calculateFork13TrinityMarkers(formattedData, mtf1h = null, showRawNodes = true) {
     if (!formattedData || formattedData.length < 1441) return [];
     const len = formattedData.length;
     const { getOLS } = buildFork13Context(formattedData, mtf1h);
@@ -1017,6 +1017,9 @@ export function calculateFork13TrinityMarkers(formattedData, mtf1h = null) {
         const std_lr = Math.sqrt(var_lr);
         const vol_24h = std_lr * Math.sqrt(1440) * 100.0;
 
+        let hasSignalOnBar = false;
+        let gSquareMarker = null;
+
         // Check Climax TP marker
         if (bandCurr.zL >= 4.0 && vol_24h >= 2.5) {
             markers.push({
@@ -1027,6 +1030,7 @@ export function calculateFork13TrinityMarkers(formattedData, mtf1h = null) {
                 text: 'F13 Climax-TP',
                 size: 1.2
             });
+            hasSignalOnBar = true;
         }
 
         // Node G
@@ -1045,6 +1049,7 @@ export function calculateFork13TrinityMarkers(formattedData, mtf1h = null) {
                 const isGSegStart = !lastNodeG || lastNodeG.dir !== dirG;
                 lastNodeG = { idx: i, dir: dirG };
 
+                let gSignalFired = false;
                 if (isGSegStart) {
                     const normal = bandCurr.bw >= 0.40 && bandCurr.bw <= 0.64;
                     const zb_m3 = dirG === 1 ? bandM3.zU : bandM3.zL;
@@ -1057,6 +1062,8 @@ export function calculateFork13TrinityMarkers(formattedData, mtf1h = null) {
                             text: dirG === 1 ? 'F13 G-Long' : 'F13 G-Short',
                             size: 1.2
                         });
+                        gSignalFired = true;
+                        hasSignalOnBar = true;
                     }
 
                     // G_REV_LONG
@@ -1069,7 +1076,23 @@ export function calculateFork13TrinityMarkers(formattedData, mtf1h = null) {
                             text: 'F13 Rev-Long',
                             size: 1.4
                         });
+                        gSignalFired = true;
+                        hasSignalOnBar = true;
                     }
+                }
+
+                // If not an approved entry signal, display as small square sub-node marker
+                if (showRawNodes && !gSignalFired) {
+                    const label = isGSegStart ? 'G-Fltr' : 'G-Node';
+                    gSquareMarker = {
+                        time: currentTick.time,
+                        position: dirG === 1 ? 'belowBar' : 'aboveBar',
+                        color: dirG === 1 ? '#34d399' : '#f87171',
+                        shape: 'square',
+                        text: label,
+                        size: 0.7
+                    };
+                    markers.push(gSquareMarker);
                 }
             }
         }
@@ -1092,6 +1115,7 @@ export function calculateFork13TrinityMarkers(formattedData, mtf1h = null) {
                     const isCSegStart = !lastNodeC || lastNodeC.dir !== dirC;
                     lastNodeC = { idx: i, dir: dirC };
 
+                    let cSignalFired = false;
                     if (isCSegStart) {
                         const squeeze = bandCurr.bw < 0.40 && (dirC === 1 ? bandCurr.zU : bandCurr.zL) >= 2.0;
                         const trend = bandCurr.bw > 0.64 && (dirC === 1 ? bandM60.zU : bandM60.zL) >= 0.0;
@@ -1103,6 +1127,27 @@ export function calculateFork13TrinityMarkers(formattedData, mtf1h = null) {
                                 shape: dirC === 1 ? 'arrowUp' : 'arrowDown',
                                 text: dirC === 1 ? 'F13 C-Long' : 'F13 C-Short',
                                 size: 1.2
+                            });
+                            cSignalFired = true;
+                            hasSignalOnBar = true;
+                        }
+                    }
+
+                    // If not an approved entry signal and showRawNodes is true
+                    if (showRawNodes && !cSignalFired && !hasSignalOnBar) {
+                        if (gSquareMarker) {
+                            // If G square already exists on same bar, merge text cleanly
+                            gSquareMarker.text = `${gSquareMarker.text}+C`;
+                            gSquareMarker.color = '#fbbf24'; // Amber
+                        } else {
+                            const label = isCSegStart ? 'C-Fltr' : 'C-Node';
+                            markers.push({
+                                time: currentTick.time,
+                                position: dirC === 1 ? 'belowBar' : 'aboveBar',
+                                color: dirC === 1 ? '#38bdf8' : '#f472b6',
+                                shape: 'square',
+                                text: label,
+                                size: 0.7
                             });
                         }
                     }

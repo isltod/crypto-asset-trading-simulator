@@ -33,7 +33,7 @@ router.post('/open', authenticateToken, (req, res) => {
                 db.run(`UPDATE accounts SET virtual_capital = ? WHERE user_id = ?`, [newCapital, userId], (err) => {
                     db.run(`INSERT INTO positions (user_id, symbol, side, entry_price, size, margin, leverage, entry_fee, capital_before, entry_type) 
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'MANUAL')`, 
-                            [userId, symbol, side, entryPrice, size, margin, account.leverage, entryFee, margin], function(err) {
+                            [userId, symbol, side, entryPrice, size, margin, account.leverage, entryFee, account.virtual_capital], function(err) {
                         res.json({ message: "Position opened", newCapital });
                     });
                 });

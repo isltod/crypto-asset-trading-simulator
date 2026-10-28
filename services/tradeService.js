@@ -63,7 +63,7 @@ function openPositionInternal(userId, symbol, side, currentPrice, sizeMultOrCb =
                 const feeRate = 0.0005;
                 const entryFee = margin * account.leverage * feeRate;
 
-                const newCapital = margin - entryFee;
+                const newCapital = account.virtual_capital - entryFee;
 
                 db.run(`UPDATE accounts SET virtual_capital = ? WHERE user_id = ?`, [newCapital, userId], (err) => {
                     if (err) {
@@ -73,7 +73,7 @@ function openPositionInternal(userId, symbol, side, currentPrice, sizeMultOrCb =
                     }
                     db.run(`INSERT INTO positions (user_id, symbol, side, entry_price, size, margin, leverage, entry_fee, capital_before, entry_type) 
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'AUTO')`, 
-                            [userId, symbol, side, entryPrice, size, margin, account.leverage, entryFee, margin], function(err) {
+                            [userId, symbol, side, entryPrice, size, margin, account.leverage, entryFee, account.virtual_capital], function(err) {
                         openingUsers.delete(userId);
                         if (err) {
                             if (callback) callback(false);
@@ -94,6 +94,11 @@ function openPositionInternal(userId, symbol, side, currentPrice, sizeMultOrCb =
 }
 
 function closePosition(userId, specificPrice, res = null, cb = null) {
+    let callback = cb;
+    if (typeof res === 'function') {
+        callback = res;
+        res = null;
+    }
     if (closingUsers.has(userId)) {
         if (res) res.status(400).json({ error: "Close position already in progress" });
         if (callback) callback(false);

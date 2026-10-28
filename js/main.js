@@ -404,6 +404,7 @@ function saveUIConfig() {
         wtIgnoreObos: document.getElementById('wt-ignore-obos')?.checked || false,
         showExtremeBreakout: document.getElementById('toggle-extreme-breakout')?.checked ?? true,
         showFork13: document.getElementById('toggle-fork13')?.checked ?? true,
+        showFork13Nodes: document.getElementById('toggle-fork13-nodes')?.checked ?? true,
         showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
         supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
         supertrendMultiplier: parseFloat(document.getElementById('supertrend-multiplier')?.value || '3.0'),
@@ -500,6 +501,9 @@ function loadUIConfig() {
                 document.getElementById('toggle-fork13').checked = config.showFork13;
                 if (state.f13OlsUpperSeries) state.f13OlsUpperSeries.applyOptions({ visible: config.showFork13 });
                 if (state.f13OlsLowerSeries) state.f13OlsLowerSeries.applyOptions({ visible: config.showFork13 });
+            }
+            if (typeof config.showFork13Nodes === 'boolean' && document.getElementById('toggle-fork13-nodes')) {
+                document.getElementById('toggle-fork13-nodes').checked = config.showFork13Nodes;
             }
             if (typeof config.showSupertrend === 'boolean' && document.getElementById('toggle-supertrend')) {
                 document.getElementById('toggle-supertrend').checked = config.showSupertrend;
@@ -1034,6 +1038,11 @@ async function init() {
         applyIndicatorMarkers();
     }
     toggleFork13?.addEventListener('change', updateFork13Visibility);
+    const toggleFork13Nodes = document.getElementById('toggle-fork13-nodes');
+    toggleFork13Nodes?.addEventListener('change', () => {
+        saveUIConfig();
+        applyIndicatorMarkers();
+    });
 
     const bindVParamInput = (id, isFloat = false, minVal = 0.1) => {
         const input = document.getElementById(id);

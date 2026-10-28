@@ -379,9 +379,11 @@ export function applyIndicatorMarkers() {
 
     // 6. Fork 13 Trinity v2 Markers
     const toggleFork13 = document.getElementById('toggle-fork13');
+    const toggleFork13Nodes = document.getElementById('toggle-fork13-nodes');
     if ((toggleFork13 && toggleFork13.checked) || state.signalType === 'fork13_trinity_v2') {
         const mtf1h = state.mtfKlines ? state.mtfKlines['1h'] : null;
-        const f13Markers = calculateFork13TrinityMarkers(formattedData, mtf1h);
+        const showRawNodes = toggleFork13Nodes ? toggleFork13Nodes.checked : true;
+        const f13Markers = calculateFork13TrinityMarkers(formattedData, mtf1h, showRawNodes);
         for (let i = 0; i < f13Markers.length; i++) {
             markers.push(f13Markers[i]);
         }
