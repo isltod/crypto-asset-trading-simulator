@@ -38,289 +38,13 @@
                     </select>
                 </div>
 
-                <div class="indicator-toggles">
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-ma" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">MA</span>
-                        </label>
-                        <input type="number" id="ma-length" class="length-input" value="20" min="1" max="200"
-                            title="MA Length">
-                    </div>
-
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-bb">
-                        <span class="slider"></span>
-                        <span class="label-text">Bollinger Bands</span>
-                    </label>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-wt" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">MTF WaveTrend</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-fork13" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">Fork 13 (Trinity v2)</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-fork13-nodes" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">F13 Sub-Nodes (Squares)</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-extreme-breakout" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">Extreme Breakout</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-supertrend">
-                            <span class="slider"></span>
-                            <span class="label-text">Supertrend</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-macd" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">MTF MACD</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-stoch-rsi" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">MTF Stoch RSI</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-vwap" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">V-Climax (VWAP)</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-vol" checked>
-                            <span class="slider"></span>
-                            <span class="label-text">Volume (MTF)</span>
-                        </label>
-                    </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-overlap" checked>
-                            <span class="slider"></span>
-                            <span class="label-text" style="color:#00e5ff;">F9 Dual Firewall</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div id="wt-params-container" class="input-container hidden">
-                    <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">WT Params:</span>
-                    <div class="input-group" title="Timeframe">
-                        <span class="label-text" style="font-size:0.7rem;">TF</span>
-                        <select id="wt-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
-                            <option value="1m">1m</option>
-                            <option value="3m">3m</option>
-                            <option value="5m" selected>5m</option>
-                            <option value="15m">15m</option>
-                            <option value="30m">30m</option>
-                            <option value="1h">1h</option>
-                            <option value="4h">4h</option>
-                            <option value="1d">1d</option>
-                        </select>
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Channel Length (n1)">
-                        <span class="label-text" style="font-size:0.7rem;">n1</span>
-                        <input type="number" id="wt-n1" class="length-input" value="10" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Average Length (n2)">
-                        <span class="label-text" style="font-size:0.7rem;">n2</span>
-                        <input type="number" id="wt-n2" class="length-input" value="21" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Signal Length">
-                        <span class="label-text" style="font-size:0.7rem;">Sig</span>
-                        <input type="number" id="wt-sig" class="length-input" value="4" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Overbought/Oversold Level">
-                        <span class="label-text" style="font-size:0.7rem;">OB/OS</span>
-                        <input type="number" id="wt-ob" class="length-input" value="53" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Allow Repainting" style="flex-direction: row; align-items: center; gap: 4px;">
-                        <span class="label-text" style="font-size:0.7rem;">Repaint</span>
-                        <input type="checkbox" id="wt-allow-repaint" style="cursor: pointer;">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Ignore OB/OS" style="flex-direction: row; align-items: center; gap: 4px;">
-                        <span class="label-text" style="font-size:0.7rem;">Ignore OB/OS</span>
-                        <input type="checkbox" id="wt-ignore-obos" style="cursor: pointer;">
-                    </div>
-                </div>
-
-                <div id="supertrend-params-container" class="input-container hidden">
-                    <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">ST Params:</span>
-                    <div class="input-group" title="ATR Period">
-                        <span class="label-text" style="font-size:0.7rem;">Period</span>
-                        <input type="number" id="supertrend-period" class="length-input" value="10" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Multiplier">
-                        <span class="label-text" style="font-size:0.7rem;">Mult</span>
-                        <input type="number" id="supertrend-multiplier" class="length-input" value="3.0" min="0.1" max="20" step="0.1">
-                    </div>
-                </div>
-
-                <div id="macd-params-container" class="input-container hidden">
-                    <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">MACD Params:</span>
-                    <div class="input-group" title="Timeframe">
-                        <span class="label-text" style="font-size:0.7rem;">TF</span>
-                        <select id="macd-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
-                            <option value="1m">1m</option>
-                            <option value="3m">3m</option>
-                            <option value="5m" selected>5m</option>
-                            <option value="15m">15m</option>
-                            <option value="30m">30m</option>
-                            <option value="1h">1h</option>
-                            <option value="4h">4h</option>
-                            <option value="1d">1d</option>
-                        </select>
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Fast EMA Period">
-                        <span class="label-text" style="font-size:0.7rem;">Fast</span>
-                        <input type="number" id="macd-fast" class="length-input" value="12" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Slow EMA Period">
-                        <span class="label-text" style="font-size:0.7rem;">Slow</span>
-                        <input type="number" id="macd-slow" class="length-input" value="26" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Signal SMA Period">
-                        <span class="label-text" style="font-size:0.7rem;">Sig</span>
-                        <input type="number" id="macd-sig" class="length-input" value="9" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Allow Repainting (Aggressive Entry)" style="flex-direction: row; align-items: center; gap: 4px;">
-                        <span class="label-text" style="font-size:0.7rem;">Repaint</span>
-                        <input type="checkbox" id="macd-allow-repaint" style="cursor: pointer;">
-                    </div>
-                </div>
-
-                <div id="stoch-params-container" class="input-container hidden">
-                    <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">StochRSI Params:</span>
-                    <div class="input-group" title="Timeframe">
-                        <span class="label-text" style="font-size:0.7rem;">TF</span>
-                        <select id="stoch-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
-                            <option value="1m">1m</option>
-                            <option value="3m">3m</option>
-                            <option value="5m" selected>5m</option>
-                            <option value="15m">15m</option>
-                            <option value="30m">30m</option>
-                            <option value="1h">1h</option>
-                            <option value="4h">4h</option>
-                            <option value="1d">1d</option>
-                        </select>
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="RSI Length">
-                        <span class="label-text" style="font-size:0.7rem;">RSI</span>
-                        <input type="number" id="stoch-rsi-len" class="length-input" value="14" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Stochastic Length">
-                        <span class="label-text" style="font-size:0.7rem;">Stoch</span>
-                        <input type="number" id="stoch-len" class="length-input" value="14" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="%K Smoothing">
-                        <span class="label-text" style="font-size:0.7rem;">K</span>
-                        <input type="number" id="stoch-k" class="length-input" value="3" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="%D Smoothing">
-                        <span class="label-text" style="font-size:0.7rem;">D</span>
-                        <input type="number" id="stoch-d" class="length-input" value="3" min="1" max="100">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Allow Repainting" style="flex-direction: row; align-items: center; gap: 4px;">
-                        <span class="label-text" style="font-size:0.7rem;">Repaint</span>
-                        <input type="checkbox" id="stoch-allow-repaint" style="cursor: pointer;">
-                    </div>
-                </div>
-
-                <div id="vwap-params-container" class="input-container hidden">
-                    <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">V-Climax Params:</span>
-                    <div class="input-group" title="Timeframe">
-                        <span class="label-text" style="font-size:0.7rem;">TF</span>
-                        <select id="v-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
-                            <option value="1m">1m</option>
-                            <option value="3m">3m</option>
-                            <option value="5m">5m</option>
-                            <option value="15m" selected>15m</option>
-                            <option value="30m">30m</option>
-                            <option value="1h">1h</option>
-                            <option value="4h">4h</option>
-                            <option value="1d">1d</option>
-                        </select>
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="VWAP Window (bars)">
-                        <span class="label-text" style="font-size:0.7rem;">Window</span>
-                        <input type="number" id="v-vwap-window" class="length-input" value="96" min="10" max="500">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="VWAP Sigma (Std Dev Multiplier)">
-                        <span class="label-text" style="font-size:0.7rem;">Sigma</span>
-                        <input type="number" id="v-vwap-sigma" class="length-input" value="2.0" step="0.1" min="0.5" max="5.0">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Volume Lookback (bars)">
-                        <span class="label-text" style="font-size:0.7rem;">Vol MA</span>
-                        <input type="number" id="v-vol-lookback" class="length-input" value="30" min="5" max="200">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Volume Surge Multiplier">
-                        <span class="label-text" style="font-size:0.7rem;">Vol Mult</span>
-                        <input type="number" id="v-vol-mult" class="length-input" value="1.8" step="0.1" min="1.0" max="10.0">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Wick to Body Ratio">
-                        <span class="label-text" style="font-size:0.7rem;">Wick</span>
-                        <input type="number" id="v-wick-ratio" class="length-input" value="0.8" step="0.1" min="0.1" max="5.0">
-                    </div>
-                    <div class="divider"></div>
-                    <div class="input-group" title="Allow Repainting" style="flex-direction: row; align-items: center; gap: 4px;">
-                        <span class="label-text" style="font-size:0.7rem;">Repaint</span>
-                        <input type="checkbox" id="v-allow-repaint" style="cursor: pointer;">
-                    </div>
-                </div>
+                <button id="btn-indicators-modal" class="btn btn-indicators" type="button" title="보조 지표 설정">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 3v18h18"/>
+                        <path d="m19 9-5 5-4-4-3 3"/>
+                    </svg>
+                    <span>보조 지표</span>
+                </button>
 
                 <div class="price-display">
                     <span id="current-price" class="price">Loading...</span>
@@ -456,6 +180,371 @@
             </aside>
         </div>
     </div>
+
+    <!-- Indicators Settings Modal Dialog (Native HTML5 <dialog>) -->
+    <dialog id="indicators-dialog" class="indicators-modal-dialog" closedby="any" aria-labelledby="indicators-dialog-title">
+        <div class="modal-header">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3v18h18"/>
+                    <path d="m19 9-5 5-4-4-3 3"/>
+                </svg>
+                <h2 id="indicators-dialog-title">보조 지표 및 신호 설정</h2>
+            </div>
+            <form method="dialog">
+                <button type="submit" class="btn-icon" aria-label="닫기">&times;</button>
+            </form>
+        </div>
+        <div class="indicators-modal-body">
+            <!-- 1. 메인 차트 오버레이 -->
+            <div class="indicators-section">
+                <div class="indicators-section-title">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="m4.93 4.93 14.14 14.14"/>
+                    </svg>
+                    <span>메인 차트 오버레이 지표</span>
+                </div>
+                <div class="indicators-grid">
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-ma" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">이동평균선 (MA)</span>
+                            </label>
+                            <input type="number" id="ma-length" class="length-input" value="20" min="1" max="200" title="MA Length">
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-bb">
+                                <span class="slider"></span>
+                                <span class="label-text">볼린저 밴드 (Bollinger Bands)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-supertrend">
+                                <span class="slider"></span>
+                                <span class="label-text">슈퍼트렌드 (Supertrend)</span>
+                            </label>
+                        </div>
+                        <div id="supertrend-params-container" class="input-container hidden">
+                            <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">ST Params:</span>
+                            <div class="input-group" title="ATR Period">
+                                <span class="label-text" style="font-size:0.7rem;">Period</span>
+                                <input type="number" id="supertrend-period" class="length-input" value="10" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Multiplier">
+                                <span class="label-text" style="font-size:0.7rem;">Mult</span>
+                                <input type="number" id="supertrend-multiplier" class="length-input" value="3.0" min="0.1" max="20" step="0.1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-vwap" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">V-Climax (VWAP)</span>
+                            </label>
+                        </div>
+                        <div id="vwap-params-container" class="input-container hidden">
+                            <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">VWAP Params:</span>
+                            <div class="input-group" title="Timeframe">
+                                <span class="label-text" style="font-size:0.7rem;">TF</span>
+                                <select id="v-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
+                                    <option value="1m">1m</option>
+                                    <option value="3m">3m</option>
+                                    <option value="5m">5m</option>
+                                    <option value="15m" selected>15m</option>
+                                    <option value="30m">30m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                    <option value="1d">1d</option>
+                                </select>
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="VWAP Window (bars)">
+                                <span class="label-text" style="font-size:0.7rem;">Window</span>
+                                <input type="number" id="v-vwap-window" class="length-input" value="96" min="10" max="500">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="VWAP Sigma (Std Dev Multiplier)">
+                                <span class="label-text" style="font-size:0.7rem;">Sigma</span>
+                                <input type="number" id="v-vwap-sigma" class="length-input" value="2.0" step="0.1" min="0.5" max="5.0">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Volume Lookback (bars)">
+                                <span class="label-text" style="font-size:0.7rem;">Vol MA</span>
+                                <input type="number" id="v-vol-lookback" class="length-input" value="30" min="5" max="200">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Volume Surge Multiplier">
+                                <span class="label-text" style="font-size:0.7rem;">Vol Mult</span>
+                                <input type="number" id="v-vol-mult" class="length-input" value="1.8" step="0.1" min="1.0" max="10.0">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Wick to Body Ratio">
+                                <span class="label-text" style="font-size:0.7rem;">Wick</span>
+                                <input type="number" id="v-wick-ratio" class="length-input" value="0.8" step="0.1" min="0.1" max="5.0">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Allow Repainting" style="flex-direction: row; align-items: center; gap: 4px;">
+                                <span class="label-text" style="font-size:0.7rem;">Repaint</span>
+                                <input type="checkbox" id="v-allow-repaint" style="cursor: pointer;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 전략 및 시그널 밴드 -->
+            <div class="indicators-section">
+                <div class="indicators-section-title">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                    <span>전략 및 시그널 밴드</span>
+                </div>
+                <div class="indicators-grid">
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-fork13" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">Fork 13 (Trinity v2 OLS)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-fork13-1sigma" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">F13 OLS ±1.0σ 보조선</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-fork13-nodes" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">F13 서브 노드 (Squares 마커)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-extreme-breakout" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">Extreme Breakout</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-overlap" checked>
+                                <span class="slider"></span>
+                                <span class="label-text" style="color:#00e5ff;">F9 Dual Firewall (Overlap)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. 하단 서브 차트 오실레이터 -->
+            <div class="indicators-section">
+                <div class="indicators-section-title">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    <span>하단 서브 차트 (오실레이터)</span>
+                </div>
+                <div class="indicators-grid">
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-vol" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">거래량 (Volume MTF)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-wt" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">MTF WaveTrend</span>
+                            </label>
+                        </div>
+                        <div id="wt-params-container" class="input-container hidden">
+                            <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">WT Params:</span>
+                            <div class="input-group" title="Timeframe">
+                                <span class="label-text" style="font-size:0.7rem;">TF</span>
+                                <select id="wt-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
+                                    <option value="1m">1m</option>
+                                    <option value="3m">3m</option>
+                                    <option value="5m" selected>5m</option>
+                                    <option value="15m">15m</option>
+                                    <option value="30m">30m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                    <option value="1d">1d</option>
+                                </select>
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Channel Length (n1)">
+                                <span class="label-text" style="font-size:0.7rem;">n1</span>
+                                <input type="number" id="wt-n1" class="length-input" value="10" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Average Length (n2)">
+                                <span class="label-text" style="font-size:0.7rem;">n2</span>
+                                <input type="number" id="wt-n2" class="length-input" value="21" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Signal Length">
+                                <span class="label-text" style="font-size:0.7rem;">Sig</span>
+                                <input type="number" id="wt-sig" class="length-input" value="4" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Overbought/Oversold Level">
+                                <span class="label-text" style="font-size:0.7rem;">OB/OS</span>
+                                <input type="number" id="wt-ob" class="length-input" value="53" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Allow Repainting" style="flex-direction: row; align-items: center; gap: 4px;">
+                                <span class="label-text" style="font-size:0.7rem;">Repaint</span>
+                                <input type="checkbox" id="wt-allow-repaint" style="cursor: pointer;">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Ignore OB/OS" style="flex-direction: row; align-items: center; gap: 4px;">
+                                <span class="label-text" style="font-size:0.7rem;">Ignore OB/OS</span>
+                                <input type="checkbox" id="wt-ignore-obos" style="cursor: pointer;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-macd" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">MTF MACD</span>
+                            </label>
+                        </div>
+                        <div id="macd-params-container" class="input-container hidden">
+                            <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">MACD Params:</span>
+                            <div class="input-group" title="Timeframe">
+                                <span class="label-text" style="font-size:0.7rem;">TF</span>
+                                <select id="macd-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
+                                    <option value="1m">1m</option>
+                                    <option value="3m">3m</option>
+                                    <option value="5m" selected>5m</option>
+                                    <option value="15m">15m</option>
+                                    <option value="30m">30m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                    <option value="1d">1d</option>
+                                </select>
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Fast EMA Period">
+                                <span class="label-text" style="font-size:0.7rem;">Fast</span>
+                                <input type="number" id="macd-fast" class="length-input" value="12" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Slow EMA Period">
+                                <span class="label-text" style="font-size:0.7rem;">Slow</span>
+                                <input type="number" id="macd-slow" class="length-input" value="26" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Signal SMA Period">
+                                <span class="label-text" style="font-size:0.7rem;">Sig</span>
+                                <input type="number" id="macd-sig" class="length-input" value="9" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Allow Repainting (Aggressive Entry)" style="flex-direction: row; align-items: center; gap: 4px;">
+                                <span class="label-text" style="font-size:0.7rem;">Repaint</span>
+                                <input type="checkbox" id="macd-allow-repaint" style="cursor: pointer;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="indicator-card">
+                        <div class="indicator-card-header">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-stoch-rsi" checked>
+                                <span class="slider"></span>
+                                <span class="label-text">MTF Stoch RSI</span>
+                            </label>
+                        </div>
+                        <div id="stoch-params-container" class="input-container hidden">
+                            <span class="label-text" style="font-size:0.75rem; font-weight:600; color:var(--text-secondary);">StochRSI Params:</span>
+                            <div class="input-group" title="Timeframe">
+                                <span class="label-text" style="font-size:0.7rem;">TF</span>
+                                <select id="stoch-tf" style="padding: 2px 4px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border-color); color: var(--text-primary); cursor: pointer; border-radius: 4px;">
+                                    <option value="1m">1m</option>
+                                    <option value="3m">3m</option>
+                                    <option value="5m" selected>5m</option>
+                                    <option value="15m">15m</option>
+                                    <option value="30m">30m</option>
+                                    <option value="1h">1h</option>
+                                    <option value="4h">4h</option>
+                                    <option value="1d">1d</option>
+                                </select>
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="RSI Length">
+                                <span class="label-text" style="font-size:0.7rem;">RSI</span>
+                                <input type="number" id="stoch-rsi-len" class="length-input" value="14" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Stochastic Length">
+                                <span class="label-text" style="font-size:0.7rem;">Stoch</span>
+                                <input type="number" id="stoch-len" class="length-input" value="14" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="%K Smoothing">
+                                <span class="label-text" style="font-size:0.7rem;">K</span>
+                                <input type="number" id="stoch-k" class="length-input" value="3" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="%D Smoothing">
+                                <span class="label-text" style="font-size:0.7rem;">D</span>
+                                <input type="number" id="stoch-d" class="length-input" value="3" min="1" max="100">
+                            </div>
+                            <div class="divider"></div>
+                            <div class="input-group" title="Allow Repainting" style="flex-direction: row; align-items: center; gap: 4px;">
+                                <span class="label-text" style="font-size:0.7rem;">Repaint</span>
+                                <input type="checkbox" id="stoch-allow-repaint" style="cursor: pointer;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </dialog>
 
     <!-- History Modal Overlay -->
     <div id="history-modal" class="modal-overlay hidden">

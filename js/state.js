@@ -112,6 +112,12 @@ export const state = {
     f7Pos24ShortSeries: null,
     f7VolThreshSeries: null,
 
+    // Fork 13 (Trinity v2) Lines & Series
+    f13OlsUpperSeries: null,
+    f13OlsLowerSeries: null,
+    f13OlsUpper1Series: null,
+    f13OlsLower1Series: null,
+
     // Fork 9 (Dual Firewall) Lines & Series
     overlapChart: null,
     overlapLineSeries: null,
