@@ -545,6 +545,8 @@ export function updateChartSeries() {
     const f13Lines = calculateFork13SeriesData(formattedData, mtf1h);
     if (state.f13OlsUpperSeries) state.f13OlsUpperSeries.setData(f13Lines.olsUpperData);
     if (state.f13OlsLowerSeries) state.f13OlsLowerSeries.setData(f13Lines.olsLowerData);
+    if (state.f13OlsUpper1Series) state.f13OlsUpper1Series.setData(f13Lines.olsUpper1Data);
+    if (state.f13OlsLower1Series) state.f13OlsLower1Series.setData(f13Lines.olsLower1Data);
 
     // Fork 9 Overlap Chart Data
     const f9Data = calculateFork9OverlapData(formattedData);
@@ -637,6 +639,8 @@ export function updateIndicatorsLive(isNewBar = false) {
         if (f13Lines.olsUpperData.length > 0) {
             state.f13OlsUpperSeries.update(f13Lines.olsUpperData[f13Lines.olsUpperData.length - 1]);
             state.f13OlsLowerSeries.update(f13Lines.olsLowerData[f13Lines.olsLowerData.length - 1]);
+            if (state.f13OlsUpper1Series && f13Lines.olsUpper1Data.length > 0) state.f13OlsUpper1Series.update(f13Lines.olsUpper1Data[f13Lines.olsUpper1Data.length - 1]);
+            if (state.f13OlsLower1Series && f13Lines.olsLower1Data.length > 0) state.f13OlsLower1Series.update(f13Lines.olsLower1Data[f13Lines.olsLower1Data.length - 1]);
         }
     }
 
@@ -742,6 +746,7 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
 
     // Fork 13 Trinity v2 Lines (OLS Bands)
     const isFork13Checked = document.getElementById('toggle-fork13')?.checked ?? true;
+    const isFork13_1SigmaChecked = isFork13Checked && (document.getElementById('toggle-fork13-1sigma')?.checked ?? true);
     state.f13OlsUpperSeries = state.chart.addLineSeries({
         color: 'rgba(56, 189, 248, 0.75)',
         lineWidth: 1,
@@ -750,6 +755,24 @@ export function initCharts(chartContainer, wtChartContainer, macdChartContainer,
         lastValueVisible: false,
         priceLineVisible: false,
         visible: isFork13Checked
+    });
+    state.f13OlsUpper1Series = state.chart.addLineSeries({
+        color: 'rgba(56, 189, 248, 0.40)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dotted,
+        title: 'F13 OLS +1.0σ',
+        lastValueVisible: false,
+        priceLineVisible: false,
+        visible: isFork13_1SigmaChecked
+    });
+    state.f13OlsLower1Series = state.chart.addLineSeries({
+        color: 'rgba(244, 114, 182, 0.40)',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dotted,
+        title: 'F13 OLS -1.0σ',
+        lastValueVisible: false,
+        priceLineVisible: false,
+        visible: isFork13_1SigmaChecked
     });
     state.f13OlsLowerSeries = state.chart.addLineSeries({
         color: 'rgba(244, 114, 182, 0.75)',

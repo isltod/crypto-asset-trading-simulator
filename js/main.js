@@ -359,8 +359,12 @@ async function updateConfig() {
             const toggleFork13 = document.getElementById('toggle-fork13');
             if (toggleFork13 && !toggleFork13.checked) {
                 toggleFork13.checked = true;
+                const toggle1s = document.getElementById('toggle-fork13-1sigma');
+                const is1s = toggle1s ? toggle1s.checked : true;
                 if (state.f13OlsUpperSeries) state.f13OlsUpperSeries.applyOptions({ visible: true });
                 if (state.f13OlsLowerSeries) state.f13OlsLowerSeries.applyOptions({ visible: true });
+                if (state.f13OlsUpper1Series) state.f13OlsUpper1Series.applyOptions({ visible: is1s });
+                if (state.f13OlsLower1Series) state.f13OlsLower1Series.applyOptions({ visible: is1s });
                 saveUIConfig();
             }
         }
@@ -404,6 +408,7 @@ function saveUIConfig() {
         wtIgnoreObos: document.getElementById('wt-ignore-obos')?.checked || false,
         showExtremeBreakout: document.getElementById('toggle-extreme-breakout')?.checked ?? true,
         showFork13: document.getElementById('toggle-fork13')?.checked ?? true,
+        showFork13_1Sigma: document.getElementById('toggle-fork13-1sigma')?.checked ?? true,
         showFork13Nodes: document.getElementById('toggle-fork13-nodes')?.checked ?? true,
         showSupertrend: document.getElementById('toggle-supertrend')?.checked || false,
         supertrendPeriod: parseInt(document.getElementById('supertrend-period')?.value || '10', 10),
@@ -502,6 +507,13 @@ function loadUIConfig() {
                 if (state.f13OlsUpperSeries) state.f13OlsUpperSeries.applyOptions({ visible: config.showFork13 });
                 if (state.f13OlsLowerSeries) state.f13OlsLowerSeries.applyOptions({ visible: config.showFork13 });
             }
+            if (typeof config.showFork13_1Sigma === 'boolean' && document.getElementById('toggle-fork13-1sigma')) {
+                document.getElementById('toggle-fork13-1sigma').checked = config.showFork13_1Sigma;
+            }
+            const isF13Visible = document.getElementById('toggle-fork13')?.checked ?? true;
+            const is1sVisible = isF13Visible && (document.getElementById('toggle-fork13-1sigma')?.checked ?? true);
+            if (state.f13OlsUpper1Series) state.f13OlsUpper1Series.applyOptions({ visible: is1sVisible });
+            if (state.f13OlsLower1Series) state.f13OlsLower1Series.applyOptions({ visible: is1sVisible });
             if (typeof config.showFork13Nodes === 'boolean' && document.getElementById('toggle-fork13-nodes')) {
                 document.getElementById('toggle-fork13-nodes').checked = config.showFork13Nodes;
             }
@@ -1030,14 +1042,19 @@ async function init() {
 
     // Fork 13 bindings
     const toggleFork13 = document.getElementById('toggle-fork13');
+    const toggleFork13_1Sigma = document.getElementById('toggle-fork13-1sigma');
     function updateFork13Visibility() {
         const isVisible = toggleFork13 ? toggleFork13.checked : false;
+        const is1sVisible = isVisible && (toggleFork13_1Sigma ? toggleFork13_1Sigma.checked : true);
         if (state.f13OlsUpperSeries) state.f13OlsUpperSeries.applyOptions({ visible: isVisible });
         if (state.f13OlsLowerSeries) state.f13OlsLowerSeries.applyOptions({ visible: isVisible });
+        if (state.f13OlsUpper1Series) state.f13OlsUpper1Series.applyOptions({ visible: is1sVisible });
+        if (state.f13OlsLower1Series) state.f13OlsLower1Series.applyOptions({ visible: is1sVisible });
         saveUIConfig();
         applyIndicatorMarkers();
     }
     toggleFork13?.addEventListener('change', updateFork13Visibility);
+    toggleFork13_1Sigma?.addEventListener('change', updateFork13Visibility);
     const toggleFork13Nodes = document.getElementById('toggle-fork13-nodes');
     toggleFork13Nodes?.addEventListener('change', () => {
         saveUIConfig();
@@ -1264,6 +1281,27 @@ async function init() {
             if (btnShort) btnShort.disabled = false;
         } catch (e) { }
     });
+
+    // Indicators Settings Modal Dialog
+    const btnIndicatorsModal = document.getElementById('btn-indicators-modal');
+    const indicatorsDialog = document.getElementById('indicators-dialog');
+    btnIndicatorsModal?.addEventListener('click', () => {
+        indicatorsDialog?.showModal();
+    });
+
+    if (indicatorsDialog && !('closedBy' in HTMLDialogElement.prototype)) {
+        indicatorsDialog.addEventListener('click', (event) => {
+            if (event.target !== indicatorsDialog) return;
+            const rect = indicatorsDialog.getBoundingClientRect();
+            const isInside = (
+                rect.top <= event.clientY &&
+                event.clientY <= rect.top + rect.height &&
+                rect.left <= event.clientX &&
+                event.clientX <= rect.left + rect.width
+            );
+            if (!isInside) indicatorsDialog.close();
+        });
+    }
 
     btnHistory?.addEventListener('click', async () => {
         state.tradeHistory = await fetchTradeHistory();

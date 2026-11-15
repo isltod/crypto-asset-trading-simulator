@@ -924,7 +924,9 @@ export function calculateFork13SeriesData(formattedData, mtf1h = null) {
     if (!formattedData || formattedData.length === 0) {
         return {
             olsUpperData: [],
-            olsLowerData: []
+            olsLowerData: [],
+            olsUpper1Data: [],
+            olsLower1Data: []
         };
     }
 
@@ -933,6 +935,8 @@ export function calculateFork13SeriesData(formattedData, mtf1h = null) {
 
     const olsUpperData = [];
     const olsLowerData = [];
+    const olsUpper1Data = [];
+    const olsLower1Data = [];
 
     for (let i = 0; i < len; i++) {
         const tick = formattedData[i];
@@ -946,12 +950,16 @@ export function calculateFork13SeriesData(formattedData, mtf1h = null) {
             const pred_lo = model.B0 + model.B1 * xx;
             olsUpperData.push({ time: tick.time, value: pred_hi + 2.0 * model.sigma_hi });
             olsLowerData.push({ time: tick.time, value: pred_lo - 2.0 * model.sigma_lo });
+            olsUpper1Data.push({ time: tick.time, value: pred_hi + 1.0 * model.sigma_hi });
+            olsLower1Data.push({ time: tick.time, value: pred_lo - 1.0 * model.sigma_lo });
         }
     }
 
     return {
         olsUpperData,
-        olsLowerData
+        olsLowerData,
+        olsUpper1Data,
+        olsLower1Data
     };
 }
 
